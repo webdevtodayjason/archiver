@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""Archiver launcher. The engine is archive.py, the OCR engines are drivers.py."""
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import archive  # noqa: E402
+if __name__ == "__main__":
+    sys.exit(archive.main() or 0)

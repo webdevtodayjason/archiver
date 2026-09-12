@@ -1,0 +1,34 @@
+{
+  "manifest": 1,
+  "id": "archiver",
+  "name": "Archiver",
+  "tagline": "Turns a shelf of PDFs into text an AI can cite.",
+  "author": {"name": "Jason Brashear", "github": "webdevtodayjason"},
+  "license": "MIT",
+  "repo": "https://github.com/webdevtodayjason/archiver",
+  "categories": ["tools", "ocr", "knowledge"],
+  "needs": {
+    "models": [
+      {"id": "zai-org/GLM-OCR", "npu": 4,
+       "role": "reads scanned pages, when the device serves it",
+       "required": false, "managed": false,
+       "alternatives": ["tesseract (local)", "paddleocr (local)"]}
+    ],
+    "npu_resident": 0, "npu_peak": 4,
+    "runtime": {"python": ">=3.9", "deps": []},
+    "disk_mb": 200
+  },
+  "asks_for": [
+    {"what": "disk", "why": "reads the PDFs you point it at and keeps the extracted text"},
+    {"what": "device-key", "why": "only if you use the Tiiny as the OCR engine"},
+    {"what": "network-lan", "why": "only to reach the Tiiny, or a shared corpus on another machine"}
+  ],
+  "provides": {"cli": "archiver"},
+  "plant": {
+    "get": "git clone https://github.com/webdevtodayjason/archiver",
+    "run": "python3 archiver status",
+    "check": "python3 archiver engines"
+  },
+  "privacy": {"egress": "none", "telemetry": false,
+    "stores": "Extracted text, page confidences and chunks, in SQLite beside the tool."}
+}

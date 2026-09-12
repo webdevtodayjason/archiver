@@ -48,17 +48,30 @@ Adding one is a `probe()` and an `ocr(png) -> (text, confidence)`.
 
 ## Across several machines
 
-No coordinator, no queue server. Each machine takes a slice by page id:
+One machine holds the corpus and runs the hub; everything else asks it for work.
 
 ```bash
-archiver run --shard 1/3     # on the first box
-archiver run --shard 2/3     # on the second
-archiver run --shard 3/3     # on the third
+archiver hub                                        # on the box with the corpus
+archiver work --hub http://hub-host:8430 --workers 16
 ```
 
-They share one SQLite corpus over the network; WAL and a busy timeout are the whole
-coordination story. Every page is committed as it finishes, so an interrupted run loses
-at most the page in flight.
+Open the hub in a browser for a live dashboard: progress, fleet rate, ETA, and
+per-machine pages, milliseconds and confidence.
+
+**Not a shared SQLite over NFS.** Sharding with `--shard i/n` is correct between
+processes on one machine, but SQLite's locking over a network filesystem is unreliable
+and the failure mode is silent corruption of a corpus that took days to build. So the
+database stays on one machine and the rest talk HTTP.
+
+**Workers render and OCR locally.** Rendering is ~0.3s and OCR ~1.6s, so a hub that
+rendered would cap the fleet at its own single-threaded render rate. The hub hands out
+page numbers; each worker fetches the PDF once, caches it, and does the work.
+
+**Leases, because machines die.** A claimed page not returned inside the lease goes back
+in the pool. A worker losing power costs a few pages, not the run.
+
+Measured: **480 pages/min** OCR on one M3 Ultra at 16 workers (near-linear from 37 at one
+worker), and 96 pages of text-layer extraction across Tailscale at **5,024 pages/min**.
 
 ## Status
 

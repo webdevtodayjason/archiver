@@ -36,6 +36,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import urllib.parse
 import time
 
 import drivers
@@ -172,13 +173,30 @@ def text_layer(pdf, page_no):
         return ""
 
 
-def render(pdf, page_no, dest):
-    """One page to PNG at 300dpi, which is what OCR engines want."""
+def render(pdf, page_no, dest, tries=2):
+    """One page to PNG at 300dpi, which is what OCR engines want.
+
+    Retried once and the reason kept. Under heavy concurrency pdftoppm
+    occasionally comes back with nothing, and an early version recorded that as
+    a bare 'failed' with no explanation - which on a million-page run is the
+    difference between a fixable problem and a mystery."""
     stem = str(dest.with_suffix(""))
-    subprocess.run(["pdftoppm", "-f", str(page_no), "-l", str(page_no),
-                    "-r", "300", "-png", "-singlefile", str(pdf), stem],
-                   capture_output=True, timeout=300)
-    return dest if dest.exists() else None
+    why = ""
+    for attempt in range(tries):
+        try:
+            r = subprocess.run(
+                ["pdftoppm", "-f", str(page_no), "-l", str(page_no),
+                 "-r", "300", "-png", "-singlefile", str(pdf), stem],
+                capture_output=True, timeout=300)
+            if dest.exists() and dest.stat().st_size > 0:
+                return dest, ""
+            why = (r.stderr or b"").decode("utf-8", "replace").strip()[:70] \
+                or f"pdftoppm produced nothing (rc {r.returncode})"
+        except Exception as exc:  # noqa: BLE001
+            why = str(exc)[:70]
+        if attempt + 1 < tries:
+            time.sleep(0.4)
+    return None, why or "render failed"
 
 
 def clean(text):
@@ -237,9 +255,9 @@ def run(limit=None, shard=None, engine=None, force_ocr=False):
                         print("  Pages with a text layer were still done. Install an")
                         print("  engine and run again to pick up the rest.")
                         break
-                png = render(pdf, row["page_no"], PAGES / f"p{row['id']}.png")
+                png, why = render(pdf, row["page_no"], PAGES / f"p{row['id']}.png")
                 if png is None:
-                    status, engine_used = "failed", "render failed"
+                    status, engine_used = "failed", f"render: {why}"
                 else:
                     try:
                         text, conf = fn(str(png))
@@ -379,6 +397,120 @@ def export(dest):
     print(f"  {n:,} chunks -> {out}")
 
 
+def work(hub, workers=8, engine=None, name=None):
+    """Worker mode: take pages from a hub, render and OCR locally, send text back.
+
+    Render and OCR both happen here on purpose. Rendering is ~0.3s and OCR is
+    ~1.6s, so a hub that rendered would cap the whole fleet at its own
+    single-threaded render rate. The hub only hands out page numbers."""
+    import queue
+    import socket
+    import threading
+    import urllib.request
+
+    name = name or socket.gethostname().split(".")[0]
+    hub = hub.rstrip("/")
+    cache = HOME / "pdfcache"
+    cache.mkdir(parents=True, exist_ok=True)
+
+    try:
+        eng_name, fn = drivers.pick(engine)
+    except drivers.Unavailable as exc:
+        sys.exit(f"  {exc}")
+    print(f"\n  worker {name}  ->  {hub}")
+    print(f"  engine {eng_name}, {workers} threads\n")
+
+    def get_doc(doc_id):
+        """Each PDF is fetched once and kept. They do not change."""
+        f = cache / f"{doc_id}.pdf"
+        if not f.exists():
+            with urllib.request.urlopen(f"{hub}/api/doc?id={doc_id}", timeout=300) as r:
+                f.write_bytes(r.read())
+        return f
+
+    done_total = 0
+    t0 = time.time()
+    while True:
+        try:
+            with urllib.request.urlopen(
+                    f"{hub}/api/claim?worker={urllib.parse.quote(name)}&n={workers*2}",
+                    timeout=60) as r:
+                pages = json.load(r).get("pages") or []
+        except Exception as exc:  # noqa: BLE001
+            print(f"  hub unreachable ({str(exc)[:50]}), retrying in 15s")
+            time.sleep(15)
+            continue
+        if not pages:
+            print("  nothing left to claim; stopping")
+            break
+
+        q = queue.Queue()
+        for p_ in pages:
+            q.put(p_)
+        results, lock = [], threading.Lock()
+
+        def run_one():
+            while True:
+                try:
+                    job = q.get_nowait()
+                except queue.Empty:
+                    return
+                t = time.time()
+                status, text, conf = "failed", "", None
+                try:
+                    pdf = get_doc(job["doc_id"])
+                    txt = text_layer(pdf, job["page_no"])
+                    if len(txt) >= TEXT_LAYER_MIN:
+                        status, text, conf, used = "text", txt, 1.0, "pdftotext"
+                    else:
+                        png, why = render(pdf, job["page_no"],
+                                          PAGES / f"w{job['page_id']}.png")
+                        used = eng_name
+                        if png is None:
+                            status, used = "failed", f"render: {why}"
+                        else:
+                            try:
+                                text, conf = fn(str(png))
+                                if len(text.strip()) < 25:
+                                    status = "blank"
+                                elif conf is not None and conf < CONF_FLOOR:
+                                    status = "poor"
+                                else:
+                                    status = "ocr"
+                            finally:
+                                png.unlink(missing_ok=True)
+                except Exception as exc:  # noqa: BLE001
+                    status, used = "failed", str(exc)[:80]
+                with lock:
+                    results.append({"page_id": job["page_id"], "status": status,
+                                    "worker": name,
+                                    "engine": used, "conf": conf,
+                                    "text": clean(text) if text else "",
+                                    "ms": int((time.time() - t) * 1000)})
+
+        threads = [threading.Thread(target=run_one, daemon=True)
+                   for _ in range(workers)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+
+        try:
+            req = urllib.request.Request(
+                f"{hub}/api/result", data=json.dumps({"pages": results}).encode(),
+                headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=180).read()
+        except Exception as exc:  # noqa: BLE001
+            print(f"  could not return {len(results)} pages: {str(exc)[:60]}")
+            print("  they will return to the pool when the lease expires")
+            continue
+        done_total += len(results)
+        el = time.time() - t0
+        print(f"  {done_total:>7,} pages   {done_total/el*60:6.1f}/min   "
+              + "  ".join(f"{k} {sum(1 for r in results if r['status']==k)}"
+                          for k in ("text", "ocr", "poor", "blank", "failed")
+                          if any(r["status"] == k for r in results)))
+    return 0
+
+
 def engines():
     print()
     for name, ok, why in drivers.probe():
@@ -401,6 +533,12 @@ def main():
     f = sub.add_parser("search"); f.add_argument("term"); f.add_argument("-n", type=int, default=8)
     e = sub.add_parser("export"); e.add_argument("dest")
     sub.add_parser("engines")
+    h = sub.add_parser("hub"); h.add_argument("--port", type=int, default=8430)
+    w = sub.add_parser("work")
+    w.add_argument("--hub", required=True)
+    w.add_argument("--workers", type=int, default=8)
+    w.add_argument("--engine", choices=list(drivers.DRIVERS))
+    w.add_argument("--name")
     a = p.parse_args()
 
     if a.cmd == "add":
@@ -419,6 +557,11 @@ def main():
         return export(a.dest)
     if a.cmd == "engines":
         return engines()
+    if a.cmd == "hub":
+        import hub
+        return hub.serve(a.port)
+    if a.cmd == "work":
+        return work(a.hub, a.workers, a.engine, a.name)
     p.print_help()
     return 0
 

@@ -317,6 +317,80 @@ def is_junk(text):
     return False
 
 
+def dedup(apply=False):
+    """Drop books the shelf holds twice.
+
+    The zimgit bundles overlap: food-preparation, post-disaster, medicine, water
+    and knots ship some of the same books, so a shelf built from several of them
+    ingests the same title more than once. The file hashes differ, so the sha
+    check at add time never sees it.
+
+    In a vault that cites its sources this is worse than wasted disk. The same
+    passage comes back twice under two document ids, and the reader sees two
+    sources agreeing when there is really only one book.
+
+    Title and page count alone are not enough to call it: one pair here shares
+    both and is genuinely two different documents. So the first real page has to
+    match as well, and the copy with the most extracted text is the one kept.
+    """
+    import collections, difflib
+    c = db()
+    docs = c.execute("SELECT id,title,pages FROM doc ORDER BY id").fetchall()
+    groups = collections.defaultdict(list)
+    for d in docs:
+        groups[(d["title"], d["pages"])].append(d["id"])
+
+    def head(doc_id):
+        r = c.execute("SELECT text FROM page WHERE doc_id=? AND text IS NOT NULL "
+                      "AND length(text)>200 ORDER BY page_no LIMIT 1",
+                      (doc_id,)).fetchone()
+        return " ".join((r["text"] if r else "").split())[:400]
+
+    def size(doc_id):
+        return c.execute("SELECT COALESCE(SUM(length(text)),0) n FROM page "
+                         "WHERE doc_id=?", (doc_id,)).fetchone()["n"]
+
+    drop, kept_pairs = [], []
+    for (title, _pages), ids in groups.items():
+        if len(ids) < 2:
+            continue
+        keep = max(ids, key=size)
+        base = head(keep)
+        for other in ids:
+            if other == keep:
+                continue
+            ratio = difflib.SequenceMatcher(None, base, head(other)).ratio()
+            if ratio > 0.85:
+                drop.append(other)
+                kept_pairs.append((title, keep, other, ratio))
+            else:
+                print(f"  keeping both copies of {title.strip()!r} "
+                      f"(ids {keep},{other} differ, first page {ratio:.2f})")
+
+    if not drop:
+        print("  no duplicate documents")
+        return 0
+    pg = c.execute(f"SELECT COUNT(*) n FROM page WHERE doc_id IN "
+                   f"({','.join('?'*len(drop))})", drop).fetchone()["n"]
+    print(f"  {len(drop)} duplicate documents, {pg:,} pages")
+    if not apply:
+        print("  nothing removed. Re-run with --apply to remove them.")
+        return 0
+    q = ",".join("?" * len(drop))
+    has_vec = c.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                        "AND name='vec'").fetchone()
+    if has_vec:
+        c.execute(f"DELETE FROM vec WHERE chunk_id IN "
+                  f"(SELECT id FROM chunk WHERE doc_id IN ({q}))", drop)
+    c.execute(f"DELETE FROM chunk WHERE doc_id IN ({q})", drop)
+    c.execute(f"DELETE FROM page  WHERE doc_id IN ({q})", drop)
+    c.execute(f"DELETE FROM doc   WHERE id     IN ({q})", drop)
+    c.commit()
+    left = c.execute("SELECT COUNT(*) n FROM doc").fetchone()["n"]
+    print(f"  removed. {left} documents remain")
+    return 0
+
+
 def chunk_all():
     """Group consecutive good pages into overlapping chunks, carrying the page
     range so a citation can point at something a human can open."""
@@ -572,6 +646,9 @@ def main():
     f = sub.add_parser("search"); f.add_argument("term"); f.add_argument("-n", type=int, default=8)
     e = sub.add_parser("export"); e.add_argument("dest")
     sub.add_parser("engines")
+    dd = sub.add_parser("dedup")
+    dd.add_argument("--apply", action="store_true",
+                    help="actually remove the duplicates")
     h = sub.add_parser("hub"); h.add_argument("--port", type=int, default=8430)
     w = sub.add_parser("work")
     w.add_argument("--hub", required=True)
@@ -596,6 +673,8 @@ def main():
         return export(a.dest)
     if a.cmd == "engines":
         return engines()
+    if a.cmd == "dedup":
+        return dedup(a.apply)
     if a.cmd == "hub":
         import hub
         return hub.serve(a.port)

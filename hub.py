@@ -91,10 +91,25 @@ def _reap(c):
     return n
 
 
+_CHUNKED_AT = [0]
+
+
 def claim(worker, n):
     with _LOCK:
         c = _c()
         _reap(c)
+        # When the queue drains and nothing is still in flight, chunk once so a
+        # finished corpus is immediately searchable. Otherwise someone has to
+        # remember a step, and the run looks complete while the text sits
+        # unusable - which is exactly what happened the first time this ran.
+        pending = c.execute(
+            "SELECT COUNT(*) n FROM page WHERE status='todo'").fetchone()["n"]
+        if pending == 0:
+            done = c.execute("SELECT COUNT(*) n FROM page "
+                             "WHERE status IN ('text','ocr')").fetchone()["n"]
+            if done and _CHUNKED_AT[0] != done:
+                _CHUNKED_AT[0] = done
+                archive.chunk_all()
         rows = c.execute(
             "SELECT p.id, p.doc_id, p.page_no, d.path FROM page p "
             "JOIN doc d ON d.id=p.doc_id "

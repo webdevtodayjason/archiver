@@ -412,6 +412,11 @@ def work(hub, workers=8, engine=None, name=None):
     hub = hub.rstrip("/")
     cache = HOME / "pdfcache"
     cache.mkdir(parents=True, exist_ok=True)
+    # A worker never calls db(), which is what normally creates this. Without it
+    # every page that fell through to OCR failed with "could not write image"
+    # while pages with a text layer sailed through, so the fleet looked healthy
+    # and silently skipped exactly the work it exists to do.
+    PAGES.mkdir(parents=True, exist_ok=True)
 
     try:
         eng_name, fn = drivers.pick(engine)

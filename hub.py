@@ -145,7 +145,15 @@ def submit(rows):
 
 def stats():
     with _LOCK:
-        return _stats(_c())
+        c = _c()
+        # Reap here as well as in claim(). Reaping only on claim meant that once
+        # every live worker finished and exited, nothing ever ran the reaper
+        # again - so pages leased by a machine that died stayed leased forever
+        # and the run sat at 99.7% with no way to finish. The dashboard polls
+        # this every few seconds, so recovery now happens whether or not any
+        # worker is still alive.
+        _reap(c)
+        return _stats(c)
 
 
 def _stats(c):
@@ -327,8 +335,17 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/claim":
             w = (q.get("worker") or ["?"])[0][:60]
             n = min(64, max(1, int((q.get("n") or ["8"])[0])))
-            return self._send(200, json.dumps({"pages": claim(w, n),
-                                               "lease_s": LEASE_S}))
+            pages = claim(w, n)
+            with _LOCK:
+                # Tell the worker whether anything is still outstanding. Empty
+                # is not the same as finished: pages leased by a machine that
+                # died are unclaimable until their lease expires, and a worker
+                # that exits on the first empty response leaves nobody to pick
+                # them up when it does.
+                left = _c().execute(
+                    "SELECT COUNT(*) n FROM page WHERE status='todo'").fetchone()["n"]
+            return self._send(200, json.dumps({"pages": pages, "lease_s": LEASE_S,
+                                               "outstanding": left}))
         if u.path == "/api/doc":
             # The worker fetches each PDF once and caches it, so this is served
             # rarely and simply.

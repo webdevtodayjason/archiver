@@ -300,17 +300,36 @@ def run(limit=None, shard=None, engine=None, force_ocr=False):
 
 
 # --------------------------------------------------------------- chunks
+def is_junk(text):
+    """Tables of contents and index pages are mostly leader dots and page
+    numbers. They embed as plausible-looking text and then win searches they
+    have nothing to do with - the first real query against this corpus returned
+    a contents page ahead of the water-treatment shelf."""
+    t = text.strip()
+    if len(t) < 120:
+        return True
+    letters = sum(c.isalpha() for c in t)
+    if letters / len(t) < 0.55:
+        return True
+    # leader dots: "Preservation . . . . . . . 44"
+    if t.count(".") / len(t) > 0.12:
+        return True
+    return False
+
+
 def chunk_all():
     """Group consecutive good pages into overlapping chunks, carrying the page
     range so a citation can point at something a human can open."""
     c = db()
     c.execute("DELETE FROM chunk")
     made = 0
+    skipped_junk = [0]
     for doc in c.execute("SELECT * FROM doc ORDER BY id"):
         pages = c.execute(
             "SELECT page_no,text FROM page WHERE doc_id=? AND status IN ('text','ocr') "
             "AND chars>0 ORDER BY page_no", (doc["id"],)).fetchall()
         buf, first, last = "", None, None
+        junked = 0
         for p in pages:
             if first is None:
                 first = p["page_no"]
@@ -318,19 +337,26 @@ def chunk_all():
             buf += ("\n\n" if buf else "") + p["text"]
             while len(buf) >= CHUNK_CHARS:
                 cut = buf.rfind(" ", 0, CHUNK_CHARS) or CHUNK_CHARS
-                c.execute("INSERT INTO chunk(doc_id,page_from,page_to,text,chars) "
-                          "VALUES(?,?,?,?,?)",
-                          (doc["id"], first, last, buf[:cut], cut))
-                made += 1
+                piece = buf[:cut]
+                if is_junk(piece):
+                    junked += 1
+                else:
+                    c.execute("INSERT INTO chunk(doc_id,page_from,page_to,text,chars) "
+                              "VALUES(?,?,?,?,?)",
+                              (doc["id"], first, last, piece, cut))
+                    made += 1
                 buf = buf[max(0, cut - CHUNK_OVERLAP):]
                 first = last
-        if buf.strip():
+        if buf.strip() and not is_junk(buf):
             c.execute("INSERT INTO chunk(doc_id,page_from,page_to,text,chars) "
                       "VALUES(?,?,?,?,?)",
                       (doc["id"], first or 1, last or 1, buf.strip(), len(buf)))
             made += 1
+        skipped_junk[0] += junked
     c.commit()
-    print(f"  {made:,} chunks, each carrying its page range")
+    print(f"  {made:,} chunks, each carrying its page range"
+          + (f"  ({skipped_junk[0]:,} contents/index pages skipped)"
+             if skipped_junk[0] else ""))
 
 
 # --------------------------------------------------------------- report
@@ -440,12 +466,20 @@ def work(hub, workers=8, engine=None, name=None):
             with urllib.request.urlopen(
                     f"{hub}/api/claim?worker={urllib.parse.quote(name)}&n={workers*2}",
                     timeout=60) as r:
-                pages = json.load(r).get("pages") or []
+                _r = json.load(r)
+                pages = _r.get("pages") or []
+                outstanding = _r.get("outstanding", 0)
         except Exception as exc:  # noqa: BLE001
             print(f"  hub unreachable ({str(exc)[:50]}), retrying in 15s")
             time.sleep(15)
             continue
         if not pages:
+            if outstanding:
+                # Someone else holds them and may be dead. Wait for the lease to
+                # lapse rather than walking away from an unfinished corpus.
+                print(f"  {outstanding} pages still leased elsewhere; waiting 60s")
+                time.sleep(60)
+                continue
             print("  nothing left to claim; stopping")
             break
 

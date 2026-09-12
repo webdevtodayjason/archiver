@@ -86,8 +86,11 @@ def _reap(c):
     n = c.execute("UPDATE page SET claimed_by=NULL, claimed_at=NULL "
                   "WHERE status='todo' AND claimed_at IS NOT NULL AND claimed_at < ?",
                   (cutoff,)).rowcount
-    if n:
-        c.commit()
+    # Always commit, even when nothing expired. An UPDATE takes a write lock
+    # whether or not it matches rows, so committing only when n>0 left an open
+    # write transaction on the hub's long-lived connection and every other
+    # process saw "database is locked" for as long as the hub ran.
+    c.commit()
     return n
 
 
@@ -226,6 +229,9 @@ td{padding:9px 12px;border-bottom:1px solid var(--line)}
 .st{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--steel);margin-top:4px}
 .st b{color:var(--ink);font-weight:500}
 .bad{color:var(--bad)}
+body.stale{opacity:.45;transition:opacity .4s}
+body.stale .v{color:var(--steel)}
+.clock{margin-left:auto;font-size:11px;color:var(--dim);letter-spacing:.08em}
 </style><div class=w>
 <header><h1>Archiver<em>·</em>the fleet</h1>
 <span class=sub id=corpus></span><span class=pill id=live></span></header>
@@ -239,12 +245,30 @@ td{padding:9px 12px;border-bottom:1px solid var(--line)}
 </div>
 <script>
 function n(x){return (x||0).toLocaleString()}
+let fails = 0, lastOk = Date.now();
 async function tick(){
-  let d; try{ d = await (await fetch('/api/stats')).json(); }catch(e){ return; }
+  let d;
+  try{
+    d = await (await fetch('/api/stats', {cache:'no-store'})).json();
+    fails = 0; lastOk = Date.now();
+    document.body.classList.remove('stale');
+  }catch(e){
+    // On a wall display a dead hub must look dead. Silently holding the last
+    // good numbers is worse than an error, because it reads as work still
+    // happening.
+    if (++fails >= 2){
+      document.body.classList.add('stale');
+      const secs = Math.round((Date.now()-lastOk)/1000);
+      document.getElementById('live').innerHTML =
+        '<span style="color:var(--bad)">no contact ' + secs + 's</span>';
+    }
+    return;
+  }
   document.getElementById('corpus').textContent =
     n(d.docs)+' documents · '+n(d.total)+' pages';
   document.getElementById('live').innerHTML = d.pages_per_min > 0
-    ? '<span class=dot></span>running' : 'idle';
+    ? '<span class=dot></span>running · ' + new Date().toLocaleTimeString()
+    : 'idle · ' + new Date().toLocaleTimeString();
   const pct = d.total ? d.done/d.total*100 : 0;
   document.getElementById('prog').style.width = pct.toFixed(1)+'%';
   document.getElementById('statuses').innerHTML =

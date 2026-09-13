@@ -200,16 +200,21 @@ def search(c, question, k=TOP_RETRIEVE):
     out = []
     for cid, s in hits:
         r = c.execute(
-            "SELECT ch.text, ch.page_from, ch.page_to, d.title, d.source "
+            "SELECT ch.text, ch.page_from, ch.page_to, d.title, d.source, d.pages "
             "FROM chunk ch JOIN doc d ON d.id=ch.doc_id WHERE ch.id=?", (cid,)).fetchone()
         if r:
             out.append({"id": cid, "sim": round(s, 4), "text": r["text"],
                         "title": r["title"], "source": r["source"],
+                        "doc_pages": r["pages"],
                         "pages": [r["page_from"], r["page_to"]]})
     return out
 
 
 def cite(h):
+    # A wiki article is one page, so "p1" would be noise - the title is the
+    # whole address. Books get the page range, which is the point of them.
+    if (h.get("doc_pages") or 0) <= 1:
+        return f"{h['title']} · {h['source']}" if h.get("source") else h["title"]
     p = (f"p{h['pages'][0]}" if h["pages"][0] == h["pages"][1]
          else f"pp{h['pages'][0]}-{h['pages'][1]}")
     return f"{h['title']} · {p}"

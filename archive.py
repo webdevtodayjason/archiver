@@ -317,6 +317,61 @@ def is_junk(text):
     return False
 
 
+def add_text(jsonl_paths, source=None):
+    """Ingest articles from a JSONL shelf: one object per line, {title, path, text}.
+
+    Wiki-shaped ZIMs (Vikidia, Wikibooks, Gutenberg, Appropedia) are HTML, not
+    scans, so there is nothing to render and nothing to OCR - the text is already
+    text. unzim.py --html writes the JSONL; this puts it straight in the database
+    with status 'text', and chunking picks it up from there.
+
+    One document per article rather than one per collection, so a citation names
+    the article the reader should go and read.
+    """
+    c = db()
+    files = []
+    for raw in jsonl_paths:
+        pp = pathlib.Path(raw).expanduser()
+        files += sorted(pp.rglob("*.jsonl")) if pp.is_dir() else [pp]
+    if not files:
+        sys.exit("no .jsonl shelves found there")
+    new = skipped = empty = 0
+    for f in files:
+        shelf = source or f.stem
+        for line in f.open(encoding="utf-8"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                skipped += 1
+                continue
+            text = (rec.get("text") or "").strip()
+            title = (rec.get("title") or rec.get("path") or "untitled").strip()
+            if not text:
+                empty += 1
+                continue
+            key = f"{f.stem}#{rec.get('path') or title}"
+            try:
+                cur = c.execute(
+                    "INSERT INTO doc(path,title,source,pages,sha,added_at) "
+                    "VALUES(?,?,?,?,?,?)",
+                    (key, title[:200], shelf, 1,
+                     hashlib.sha1(key.encode()).hexdigest()[:16], now()))
+            except sqlite3.IntegrityError:
+                skipped += 1
+                continue
+            c.execute("INSERT INTO page(doc_id,page_no,status,engine,conf,chars,text,done_at) "
+                      "VALUES(?,1,'text','zim-html',1.0,?,?,?)",
+                      (cur.lastrowid, len(text), text, now()))
+            new += 1
+        c.commit()
+        print(f"  {f.name}: {new:,} articles in")
+    print(f"  {new:,} added, {skipped:,} already present, {empty:,} empty")
+    return 0
+
+
 def dedup(apply=False):
     """Drop books the shelf holds twice.
 
@@ -524,14 +579,40 @@ def retitle(apply=False, ask=False):
     return 0
 
 
+def _chunk_selftest():
+    """The chunker must always consume text, whatever the text looks like."""
+    for name, body in (("no spaces at all", "x" * 9000),
+                       ("one early space", "x" * 40 + " " + "y" * 9000),
+                       ("normal prose", ("the quick brown fox " * 900))):
+        buf, rounds = body, 0
+        while len(buf) >= CHUNK_CHARS:
+            cut = buf.rfind(" ", 0, CHUNK_CHARS)
+            if cut <= CHUNK_OVERLAP:
+                cut = CHUNK_CHARS
+            buf = buf[max(0, cut - CHUNK_OVERLAP):]
+            rounds += 1
+            assert rounds < 1000, f"chunker did not advance on: {name}"
+    return True
+
+
 def chunk_all():
     """Group consecutive good pages into overlapping chunks, carrying the page
     range so a citation can point at something a human can open."""
     c = db()
+    # Chunk ids are rowids, and SQLite restarts them at 1 once the table is
+    # empty. So a rebuild does not just orphan the old vectors, it silently
+    # re-points them at different text - the index would keep answering, with
+    # the wrong passage behind every citation. Clear them together or not at all.
+    if c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vec'").fetchone():
+        n = c.execute("SELECT COUNT(*) n FROM vec").fetchone()["n"]
+        if n:
+            c.execute("DELETE FROM vec")
+            print(f"  dropped {n:,} vectors - they described the old chunks. Re-run: archivist index")
     c.execute("DELETE FROM chunk")
     made = 0
     skipped_junk = [0]
-    for doc in c.execute("SELECT * FROM doc ORDER BY id"):
+    # fetchall, so the outer read is not held open across every insert below
+    for doc in c.execute("SELECT * FROM doc ORDER BY id").fetchall():
         pages = c.execute(
             "SELECT page_no,text FROM page WHERE doc_id=? AND status IN ('text','ocr') "
             "AND chars>0 ORDER BY page_no", (doc["id"],)).fetchall()
@@ -543,7 +624,17 @@ def chunk_all():
             last = p["page_no"]
             buf += ("\n\n" if buf else "") + p["text"]
             while len(buf) >= CHUNK_CHARS:
-                cut = buf.rfind(" ", 0, CHUNK_CHARS) or CHUNK_CHARS
+                # Break on a space so chunks do not end mid-word. Two ways that
+                # goes wrong, and both stall the loop rather than failing:
+                # rfind returns -1 when the whole span is unbroken, and -1 is
+                # truthy, so `or` does not catch it; and any break at or before
+                # the overlap leaves the buffer exactly as long as it was.
+                # Either way the text never advances and chunking spins forever
+                # on one document. A 35,000-character list of moth genera found
+                # this, after twenty-five minutes at 99% CPU.
+                cut = buf.rfind(" ", 0, CHUNK_CHARS)
+                if cut <= CHUNK_OVERLAP:
+                    cut = CHUNK_CHARS          # no usable break: cut it hard
                 piece = buf[:cut]
                 if is_junk(piece):
                     junked += 1
@@ -779,6 +870,10 @@ def main():
     f = sub.add_parser("search"); f.add_argument("term"); f.add_argument("-n", type=int, default=8)
     e = sub.add_parser("export"); e.add_argument("dest")
     sub.add_parser("engines")
+    sub.add_parser("chunk")
+    at = sub.add_parser("add-text")
+    at.add_argument("paths", nargs="+")
+    at.add_argument("--source")
     rt = sub.add_parser("retitle")
     rt.add_argument("--apply", action="store_true",
                     help="actually rename the documents")
@@ -811,6 +906,10 @@ def main():
         return export(a.dest)
     if a.cmd == "engines":
         return engines()
+    if a.cmd == "chunk":
+        return chunk_all()
+    if a.cmd == "add-text":
+        return add_text(a.paths, a.source)
     if a.cmd == "dedup":
         return dedup(a.apply)
     if a.cmd == "retitle":

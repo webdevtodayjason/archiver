@@ -73,12 +73,57 @@ in the pool. A worker losing power costs a few pages, not the run.
 Measured: **480 pages/min** OCR on one M3 Ultra at 16 workers (near-linear from 37 at one
 worker), and 96 pages of text-layer extraction across Tailscale at **5,024 pages/min**.
 
+## Asking it things
+
+`archivist` is the other half. It embeds the chunks on a Tiiny, answers out of what it
+retrieves, and refuses when nothing it retrieved covers the question.
+
+```bash
+archivist index                  # embed the chunks on the device
+archivist ask "how do you tan a hide"
+```
+
+Answers cite the book and the page. If the passages do not support an answer it says so
+rather than filling the gap, which is the only behaviour worth having in a vault someone
+consults when they cannot look anything up.
+
+## Your own notes
+
+The same machinery points at a folder of markdown just as well as a shelf of PDFs.
+
+```bash
+python3 md2jsonl.py ~/vault notes.jsonl     # folder becomes the project, filename the title
+archivist add-text notes.jsonl
+archivist chunk && archivist index
+python3 entities.py build                   # the recurring names, no model involved
+python3 cockpit.py 8500                     # open http://127.0.0.1:8500
+```
+
+The cockpit draws the names that keep turning up together, and you click one to pull its
+neighbourhood forward. Ask anything from the rail, write a new note into your vault, and
+it is answerable a few seconds later.
+
+**Two ways to answer, and the split is the point.** "What did we decide about X" is a
+retrieval question, so it goes to nearest-neighbour search. "Who is Richard" is not.
+Search hands the model whichever notes name him near words that match the question; what
+answers it is every passage that names him at all. So a who-or-what-is question about a
+name the archive knows reads the mentions instead, and the answer says which path it
+took. Same corpus, same model, and the difference is one hedged sentence against a cited
+profile drawn from 136 notes.
+
+Names are folded on case, so `HOLACE` and `HoLaCe` are one entity and the spelling that
+actually appears most often is the one you see.
+
+Settings live behind the light in the top bar: which device, which port, the key, an
+alternate chat endpoint if you want the answering model somewhere else, and where your
+vault is. It tells you which link is down rather than making you read a log.
+
 ## Status
 
 Working: add, text-layer triage, OCR through any driver, cleaning, chunking with
-provenance, quarantine, search, export.
+provenance, quarantine, search, export, embedding, retrieval with citations, entity
+index, the cockpit.
 
-Not yet: ZIM extraction (needs libzim), parallel workers inside one machine, embedding.
-Chunks come out as jsonl and something else embeds them.
+Not yet: ZIM extraction (needs libzim), parallel workers inside one machine.
 
 MIT.

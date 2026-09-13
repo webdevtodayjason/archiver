@@ -159,6 +159,52 @@ def candidates(text):
     return out
 
 
+def fold_case(hits, seen, heads):
+    """HOLACE and HoLaCe are one name. Merge them and keep the better spelling.
+
+    Two rows for one name is not just untidy: mentions_of() looks the name up
+    COLLATE NOCASE, so it matches whichever row SQLite reaches first and silently
+    reads half the mentions. Folding here is what makes that lookup honest.
+
+    The surviving spelling is the one that actually appears most often, so an
+    acronym that is genuinely upper case (TTS, RLS, IDs) keeps its shape while a
+    name that is merely shouted in a heading loses to its ordinary form. Ties go
+    to the form that is not all-caps, then the longer one, then alphabetical, so
+    two rebuilds of the same corpus agree.
+    """
+    groups = collections.defaultdict(list)
+    for name in hits:
+        groups[name.lower()].append(name)
+    h, sn, hd = {}, collections.Counter(), collections.Counter()
+    for forms in groups.values():
+        best = max(forms, key=lambda n: (seen[n], n.upper() != n, len(n), n))
+        # a chunk naming both spellings is still one mention of one name
+        h[best] = list(dict.fromkeys(m for n in forms for m in hits[n]))
+        sn[best] = sum(seen[n] for n in forms)
+        hd[best] = sum(heads[n] for n in forms)
+    return h, sn, hd
+
+
+def _fold_selftest():
+    C = collections.Counter
+    hits = {"HoLaCe": [(1, 1), (2, 2)], "HOLACE": [(3, 3), (1, 1)],
+            "TTS": [(4, 4)], "Tts": [(5, 5)]}
+    seen = C({"HoLaCe": 168, "HOLACE": 6, "TTS": 40, "Tts": 1})
+    h, sn, _ = fold_case(hits, seen, C())
+    assert set(h) == {"HoLaCe", "TTS"}, h            # merged, best spelling kept
+    assert h["HoLaCe"] == [(1, 1), (2, 2), (3, 3)], h["HoLaCe"]   # (1,1) not doubled
+    assert sn["HoLaCe"] == 174, sn
+    # an all-caps acronym only loses when the other spelling is genuinely commoner
+    h2, _, _ = fold_case({"PATH": [(1, 1)], "Path": [(2, 2)]},
+                         C({"PATH": 140, "Path": 93}), C())
+    assert set(h2) == {"PATH"}, h2
+    # a true tie goes to the mixed-case form, not the shout
+    h3, _, _ = fold_case({"WAVE": [(1, 1)], "Wave": [(2, 2)]},
+                         C({"WAVE": 9, "Wave": 9}), C())
+    assert set(h3) == {"Wave"}, h3
+    return "fold: 4/4"
+
+
 def build(min_docs=3):
     """Index every capitalised name in the archive. No model involved."""
     c = archive.db()
@@ -175,6 +221,7 @@ def build(min_docs=3):
             hits[name].append((r["doc_id"], r["id"]))
             seen[name] += 1
             heads[name] += 1 if h else 0
+    hits, seen, heads = fold_case(hits, seen, heads)
     kept = 0
     # A name that titles notes in many unrelated projects is a section of the
     # author's own note template, not a subject. "Known Gotchas" titles 49 notes

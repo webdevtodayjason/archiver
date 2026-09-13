@@ -1,3 +1,5 @@
+<img src="assets/banner.png" alt="A stack of old papers dissolving into a constellation of connected green nodes" width="100%">
+
 # Archiver
 
 Turns a shelf of PDFs into text an AI can **cite**.

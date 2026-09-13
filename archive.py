@@ -34,12 +34,10 @@ import pathlib
 import re
 import shutil
 import sqlite3
-import subprocess
 import sys
 import urllib.parse
 import time
 
-import drivers
 
 HERE = pathlib.Path(__file__).resolve().parent
 HOME = pathlib.Path(os.environ.get("ARCHIVER_HOME", HERE / "corpus"))
@@ -114,14 +112,37 @@ def need(tool):
 
 
 # ------------------------------------------------------------------ add
-def page_count(pdf):
+def _drivers():
+    """OCR engines live in drivers.py, which shells out to tesseract.
+
+    Same reason as _poppler: an install that only reads notes has no business
+    carrying a module that runs other programs.
+    """
     try:
-        out = subprocess.run(["pdfinfo", str(pdf)], capture_output=True,
-                             text=True, errors="replace", timeout=120).stdout
-        m = re.search(r"^Pages:\s+(\d+)", out, re.M)
-        return int(m.group(1)) if m else 0
-    except Exception:  # noqa: BLE001
-        return 0
+        import drivers
+    except ImportError:
+        sys.exit("  OCR needs drivers.py, which this install does not have.\n"
+                 "  Full tool: https://github.com/webdevtodayjason/archiver")
+    return drivers
+
+
+def _poppler():
+    """PDF work lives in pdfsource.py, the only file that shells out.
+
+    Imported late so the notes half of this tool runs where there is no poppler
+    and no permission to run one, and so that failure is a sentence rather than
+    a traceback four frames down.
+    """
+    try:
+        import pdfsource
+    except ImportError:
+        sys.exit("  PDF support needs pdfsource.py, which this install does not have.\n"
+                 "  Full tool: https://github.com/webdevtodayjason/archiver")
+    return pdfsource
+
+
+def page_count(pdf):
+    return _poppler().page_count(pdf)
 
 
 def add(paths, source=None):
@@ -164,39 +185,12 @@ def add(paths, source=None):
 # ----------------------------------------------------------------- work
 def text_layer(pdf, page_no):
     """What poppler can already read off the page, if anything."""
-    try:
-        out = subprocess.run(
-            ["pdftotext", "-f", str(page_no), "-l", str(page_no), "-layout",
-             str(pdf), "-"], capture_output=True, text=True, errors="replace", timeout=120)
-        return (out.stdout or "").strip()
-    except Exception:  # noqa: BLE001
-        return ""
+    return _poppler().text_layer(pdf, page_no)
 
 
 def render(pdf, page_no, dest, tries=2):
-    """One page to PNG at 300dpi, which is what OCR engines want.
-
-    Retried once and the reason kept. Under heavy concurrency pdftoppm
-    occasionally comes back with nothing, and an early version recorded that as
-    a bare 'failed' with no explanation - which on a million-page run is the
-    difference between a fixable problem and a mystery."""
-    stem = str(dest.with_suffix(""))
-    why = ""
-    for attempt in range(tries):
-        try:
-            r = subprocess.run(
-                ["pdftoppm", "-f", str(page_no), "-l", str(page_no),
-                 "-r", "300", "-png", "-singlefile", str(pdf), stem],
-                capture_output=True, timeout=300)
-            if dest.exists() and dest.stat().st_size > 0:
-                return dest, ""
-            why = (r.stderr or b"").decode("utf-8", "replace").strip()[:70] \
-                or f"pdftoppm produced nothing (rc {r.returncode})"
-        except Exception as exc:  # noqa: BLE001
-            why = str(exc)[:70]
-        if attempt + 1 < tries:
-            time.sleep(0.4)
-    return None, why or "render failed"
+    """One page to PNG at 300dpi, which is what OCR engines want."""
+    return _poppler().render(pdf, page_no, dest, tries)
 
 
 def clean(text):
@@ -248,9 +242,9 @@ def run(limit=None, shard=None, engine=None, force_ocr=False):
                 # No usable text layer, so this page has to be looked at.
                 if fn is None:
                     try:
-                        name, fn = drivers.pick(engine)
+                        name, fn = _drivers().pick(engine)
                         print(f"  OCR engine: {name}\n")
-                    except drivers.Unavailable as exc:
+                    except _drivers().Unavailable as exc:
                         print(f"  {exc}\n")
                         print("  Pages with a text layer were still done. Install an")
                         print("  engine and run again to pick up the rest.")
@@ -458,35 +452,14 @@ BAD_TITLE = re.compile(r"^(untitled|unknown|microsoft word|document\d*|scan|prin
 
 def _raw_pdf_title(path):
     """Whatever the PDF claims, junk included - useful as a hint to the model."""
-    if not os.path.exists(path):
-        return None
-    try:
-        out = subprocess.run(["pdfinfo", path], capture_output=True, text=True,
-                             errors="replace", timeout=30).stdout
-    except Exception:  # noqa: BLE001
-        return None
-    for line in out.splitlines():
-        k, _, v = line.partition(":")
-        if k.strip() == "Title":
-            return " ".join(v.split())[:120] or None
-    return None
+    return _poppler().pdf_title(path)
 
 
 def _title_from_pdf(path):
     """The PDF's own Title field, when it is a title and not a filename."""
-    if not os.path.exists(path):
-        return None
-    try:
-        out = subprocess.run(["pdfinfo", path], capture_output=True, text=True,
-                             errors="replace", timeout=30).stdout
-    except Exception:  # noqa: BLE001
-        return None
-    for line in out.splitlines():
-        k, _, v = line.partition(":")
-        if k.strip() == "Title":
-            v = " ".join(v.split())
-            if len(v) > 3 and not BAD_TITLE.match(v):
-                return v[:120]
+    v = _poppler().pdf_title(path)
+    if v and len(v) > 3 and not BAD_TITLE.match(v):
+        return v[:120]
     return None
 
 
@@ -784,8 +757,8 @@ def work(hub, workers=8, engine=None, name=None):
     PAGES.mkdir(parents=True, exist_ok=True)
 
     try:
-        eng_name, fn = drivers.pick(engine)
-    except drivers.Unavailable as exc:
+        eng_name, fn = _drivers().pick(engine)
+    except _drivers().Unavailable as exc:
         sys.exit(f"  {exc}")
     print(f"\n  worker {name}  ->  {hub}")
     print(f"  engine {eng_name}, {workers} threads\n")
@@ -891,7 +864,7 @@ def work(hub, workers=8, engine=None, name=None):
 
 def engines():
     print()
-    for name, ok, why in drivers.probe():
+    for name, ok, why in _drivers().probe():
         print(f"  {'ok  ' if ok else '--  '} {name:<10} {why}")
     print()
 
@@ -904,7 +877,7 @@ def main():
     r = sub.add_parser("run")
     r.add_argument("--limit", type=int)
     r.add_argument("--shard", help="i/n - this machine's share, e.g. 1/3")
-    r.add_argument("--engine", choices=list(drivers.DRIVERS))
+    r.add_argument("--engine")
     r.add_argument("--force-ocr", action="store_true",
                    help="ignore text layers and OCR everything")
     s = sub.add_parser("status"); s.add_argument("--poor", action="store_true")
@@ -927,7 +900,7 @@ def main():
     w = sub.add_parser("work")
     w.add_argument("--hub", required=True)
     w.add_argument("--workers", type=int, default=8)
-    w.add_argument("--engine", choices=list(drivers.DRIVERS))
+    w.add_argument("--engine")
     w.add_argument("--name")
     a = p.parse_args()
 

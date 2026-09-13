@@ -19,12 +19,14 @@ What is drawn is then a window over that: the best-connected slice, or the
 neighbourhood of whatever you asked about.
 """
 import collections
+import hashlib
 import json
 import math
 import os
 import pathlib
 import re
 import sqlite3
+import struct
 import sys
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -408,7 +410,7 @@ def new_note(c, title, text, shelf=""):
         cur = c.execute(
             "INSERT INTO doc(path,title,source,pages,sha,added_at) VALUES(?,?,?,?,?,?)",
             (key, title, shelf or "(root)", 1,
-             __import__("hashlib").sha1(key.encode()).hexdigest()[:16],
+             hashlib.sha1(key.encode()).hexdigest()[:16],
              archive.now()))
     except sqlite3.IntegrityError:
         return {"error": "a note with that path is already in the archive"}
@@ -431,7 +433,7 @@ def new_note(c, title, text, shelf=""):
                 arr = archivist.norm(v)
                 c.execute("INSERT OR REPLACE INTO vec(chunk_id,dim,v) VALUES(?,?,?)",
                           (r["id"], len(arr),
-                           __import__("struct").pack(f"{len(arr)}f", *arr)))
+                           struct.pack(f"{len(arr)}f", *arr)))
             c.commit()
             embedded = len(rows)
     except Exception as e:  # noqa: BLE001 - the note is safe on disk either way
@@ -635,5 +637,69 @@ def run(port=8500):
         print("\n  bye")
 
 
+def selfcheck():
+    """Prove the offline half works, on a corpus built from nothing.
+
+    Everything here runs without a device, without a network and without a
+    third-party package, because that is the only part that can be checked
+    somewhere other than the machine it will live on. Embedding and answering
+    need the Tiiny and are checked by the Setup panel at runtime instead.
+    """
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="brain-selfcheck-")
+    os.environ["ARCHIVER_HOME"] = tmp
+    os.environ["BRAIN_VAULT_CONFIG"] = os.path.join(tmp, "cfg.json")
+    import importlib
+    importlib.reload(archive)
+    import entities
+    importlib.reload(entities)
+
+    print(archive._chunk_selftest())
+    print("  " + entities._fold_selftest())
+
+    notes = os.path.join(tmp, "notes.jsonl")
+    with open(notes, "w") as fh:
+        for i in range(9):
+            fh.write(json.dumps({
+                "title": f"Note {i}", "shelf": "Selfcheck",
+                "text": ("The platform Argus runs on is Keelpin, and the "
+                         "security work under Keelpin is owned by Argus. " * 9
+                         + f"My partner Richard reviewed revision {i} of Keelpin "
+                           f"and Richard signed it off. ") * 3}) + "\n")
+    archive.add_text([notes], source="selfcheck")
+    c = archive.db()
+    docs = c.execute("SELECT COUNT(*) n FROM doc").fetchone()["n"]
+    assert docs == 9, f"expected 9 notes, got {docs}"
+    archive.chunk_all()
+    chunks = c.execute("SELECT COUNT(*) n FROM chunk").fetchone()["n"]
+    assert chunks > 0, "chunker produced nothing"
+    print(f"  ingest: {docs} notes -> {chunks} chunks")
+
+    entities.build(min_docs=3)
+    names = {r["name"] for r in c.execute("SELECT name FROM entity")}
+    assert "Keelpin" in names and "Richard" in names, sorted(names)[:20]
+    print(f"  entities: {len(names)} found, Keelpin and Richard among them")
+
+    d = window(archive.db(), "", 40)
+    assert set(d) >= {"nodes", "edges", "total_entities", "total_edges"}, sorted(d)
+    assert 0 <= d["total_entities"] <= len(names), (d["total_entities"], len(names))
+    assert isinstance(d["nodes"], list) and isinstance(d["edges"], list)
+    print(f"  graph: reduction ran over {d['total_entities']} entities, "
+          f"{d['total_edges']} co-occurrences")
+
+    # the routing rule is the thing most likely to rot silently
+    assert ASKING_ABOUT.match("who is Richard").group(1) == "Richard"
+    assert ASKING_ABOUT.match("what did we decide about X") is None
+    assert (STATIC / "cockpit.html").read_bytes().count(b"<title>") == 1
+    print("  routing and page: ok")
+
+    import shutil
+    shutil.rmtree(tmp, ignore_errors=True)
+    print("\n  selfcheck passed")
+    return 0
+
+
 if __name__ == "__main__":
+    if "--selfcheck" in sys.argv:
+        sys.exit(selfcheck())
     run(int(sys.argv[1]) if len(sys.argv) > 1 else 8500)

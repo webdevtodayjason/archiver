@@ -25,7 +25,7 @@ import urllib.request
 
 TIINY_HOST = os.environ.get("TIINY_HOST", "")
 TIINY_KEY = os.environ.get("TIINY_KEY", "")
-TIINY_PORT = os.environ.get("TIINY_PORT", "8800")
+TIINY_PORT = os.environ.get("TIINY_PORT", "80")  # :8800 is docker-bridge-only since 1.0.0
 TIINY_OCR_MODEL = os.environ.get("TIINY_OCR_MODEL", "zai-org/GLM-OCR")
 
 PROMPT = ("Transcribe every word of text on this page exactly as printed. "

@@ -37,7 +37,9 @@ import archive
 
 HOST = os.environ.get("TIINY_HOST", "")
 KEY = os.environ.get("TIINY_KEY", "")
-PORT = os.environ.get("TIINY_PORT", "8800")
+# The 1.0.0 firmware moved the AI gateway off the LAN: it now binds
+# 172.17.0.1:8800 (docker bridge only) and serves the same surface on :80.
+PORT = os.environ.get("TIINY_PORT", "80")
 EMBED_MODEL = os.environ.get("LASTLIGHT_EMBED", "Qwen/Qwen3-Embedding-0.6B")
 RERANK_MODEL = os.environ.get("LASTLIGHT_RERANK", "Qwen/Qwen3-Reranker-0.6B")
 CHAT_MODEL = os.environ.get("LASTLIGHT_CHAT", "")

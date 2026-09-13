@@ -391,6 +391,139 @@ def dedup(apply=False):
     return 0
 
 
+# A PDF Title field is very often the production filename, a job number, or
+# nothing at all. Those are worse than the shelf label they would replace,
+# because a wrong title reads as provenance.
+BAD_TITLE = re.compile(r"^(untitled|unknown|microsoft word|document\d*|scan|print|"
+                       r"[a-z]{0,3}\d{3,}[a-z]*$|[\w .-]+\.(pdf|doc|docx|indd|qxd|max|tif)$"
+                       r")", re.I)
+
+
+def _raw_pdf_title(path):
+    """Whatever the PDF claims, junk included - useful as a hint to the model."""
+    if not os.path.exists(path):
+        return None
+    try:
+        out = subprocess.run(["pdfinfo", path], capture_output=True, text=True,
+                             errors="replace", timeout=30).stdout
+    except Exception:  # noqa: BLE001
+        return None
+    for line in out.splitlines():
+        k, _, v = line.partition(":")
+        if k.strip() == "Title":
+            return " ".join(v.split())[:120] or None
+    return None
+
+
+def _title_from_pdf(path):
+    """The PDF's own Title field, when it is a title and not a filename."""
+    if not os.path.exists(path):
+        return None
+    try:
+        out = subprocess.run(["pdfinfo", path], capture_output=True, text=True,
+                             errors="replace", timeout=30).stdout
+    except Exception:  # noqa: BLE001
+        return None
+    for line in out.splitlines():
+        k, _, v = line.partition(":")
+        if k.strip() == "Title":
+            v = " ".join(v.split())
+            if len(v) > 3 and not BAD_TITLE.match(v):
+                return v[:120]
+    return None
+
+
+def _title_by_model(title_hint, page_text, inside_text=""):
+    """Ask the local model what book this is.
+
+    The first page of a scanned book is a cover, a copyright notice or a
+    chapter opening, and no rule I wrote told those apart: the heuristic
+    offered 'Add sauce to noodles. Stir and Heat through.' as a title. A model
+    reading the page gets it right or says it cannot tell, which is the part
+    that matters.
+    """
+    import archivist  # lazy: only the --ask path needs the model
+    model, base, key = archivist.pick_chat()
+    body = {"model": model, "max_tokens": 60, "temperature": 0.0,
+            "chat_template_kwargs": {"enable_thinking": False},
+            "messages": [{"role": "user", "content":
+                "Below are two pages of a scanned book and the title recorded "
+                "in its PDF metadata, which is often a filename or junk.\n\n"
+                "Reply with the book's actual title and nothing else. No "
+                "quotes, no explanation. If you cannot tell, reply exactly: "
+                "UNKNOWN\n\n"
+                "Two cautions. The front page is usually a copyright page, so a "
+                "publisher's name there is not the subject of the book: check it "
+                "against what the inside page is actually about. And the text is "
+                "OCR, so fix obvious character damage in a title you quote.\n\n"
+                f"PDF metadata title: {title_hint or '(none)'}\n\n"
+                f"FRONT PAGE:\n{(page_text or '')[:1200]}\n\n"
+                f"A PAGE FROM INSIDE:\n{(inside_text or '')[:1200]}"}]}
+    try:
+        d = archivist.api("/v1/chat/completions", body, timeout=120, base=base, key=key)
+        out = " ".join((d["choices"][0]["message"].get("content") or "").split())
+    except Exception as exc:  # noqa: BLE001
+        return None, f"model error: {str(exc)[:40]}"
+    out = out.strip().strip('"').strip()
+    if not out or out.upper().startswith("UNKNOWN") or len(out) > 120:
+        return None, "model could not tell"
+    return out, "model"
+
+
+def retitle(apply=False, ask=False):
+    """Give every document its real title.
+
+    The shelf titles come from the ZIM filenames, so a citation reads
+    'Nuclear Threats 5 - p160'. That is useless to somebody who wants to check
+    what they were just told, and a citation nobody can follow is the same as
+    no citation. The PDFs know better: that document is Nuclear War Survival
+    Skills, and 'Emergency Preparedness 12' is army FM 3-05.70.
+    """
+    c = db()
+    rows = c.execute("SELECT id,title,path,pages FROM doc ORDER BY id").fetchall()
+    plan, kept = [], 0
+    for d in rows:
+        # With --ask the model decides every time. The PDF Title field survives
+        # the junk filter too often ('22\\wq22.PDF', 'THIS CD PRODUCED BY') and
+        # a plausible-looking wrong title is worse than an obviously useless one.
+        new = None if ask else _title_from_pdf(d["path"])
+        how = "pdf"
+        if not new and ask:
+            pg = c.execute("SELECT text FROM page WHERE doc_id=? AND text IS NOT NULL "
+                           "AND length(text)>60 ORDER BY page_no LIMIT 1",
+                           (d["id"],)).fetchone()
+            hint = _raw_pdf_title(d["path"])
+            mid = c.execute("SELECT text FROM page WHERE doc_id=? AND text IS NOT NULL "
+                            "AND length(text)>300 ORDER BY page_no "
+                            "LIMIT 1 OFFSET ?",
+                            (d["id"], max(1, (d["pages"] or 10) // 4))).fetchone()
+            new, how = _title_by_model(hint, pg["text"] if pg else "",
+                                       mid["text"] if mid else "")
+        if not new or new.strip() == (d["title"] or "").strip():
+            kept += 1
+            continue
+        plan.append((d["id"], d["title"], new, how))
+
+    for doc_id, old, new, how in plan:
+        print(f"  {old.strip()[:34]:36} -> {new[:58]:60} [{how}]")
+    print(f"\n  {len(plan)} documents would be retitled, {kept} left alone")
+    if not apply:
+        print("  nothing changed. Re-run with --apply.")
+        return 0
+    # Keep the shelf label. The model is right most of the time and confidently
+    # wrong the rest, and a citation naming the wrong book is worse than one
+    # naming no book, so the original has to stay recoverable.
+    cols = [r[1] for r in c.execute("PRAGMA table_info(doc)")]
+    if "title_orig" not in cols:
+        c.execute("ALTER TABLE doc ADD COLUMN title_orig TEXT")
+    for doc_id, old_t, new_t, _how in plan:
+        c.execute("UPDATE doc SET title_orig=COALESCE(title_orig,?), title=? "
+                  "WHERE id=?", (old_t, new_t, doc_id))
+    c.commit()
+    print("  applied. Citations now name the book.")
+    return 0
+
+
 def chunk_all():
     """Group consecutive good pages into overlapping chunks, carrying the page
     range so a citation can point at something a human can open."""
@@ -646,6 +779,11 @@ def main():
     f = sub.add_parser("search"); f.add_argument("term"); f.add_argument("-n", type=int, default=8)
     e = sub.add_parser("export"); e.add_argument("dest")
     sub.add_parser("engines")
+    rt = sub.add_parser("retitle")
+    rt.add_argument("--apply", action="store_true",
+                    help="actually rename the documents")
+    rt.add_argument("--ask", action="store_true",
+                    help="ask the local model where the PDF has no usable title")
     dd = sub.add_parser("dedup")
     dd.add_argument("--apply", action="store_true",
                     help="actually remove the duplicates")
@@ -675,6 +813,8 @@ def main():
         return engines()
     if a.cmd == "dedup":
         return dedup(a.apply)
+    if a.cmd == "retitle":
+        return retitle(a.apply, a.ask)
     if a.cmd == "hub":
         import hub
         return hub.serve(a.port)

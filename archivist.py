@@ -56,7 +56,13 @@ TOP_ANSWER = 6
 # from it is how a vault starts inventing things.
 MIN_SIM = float(os.environ.get("LASTLIGHT_MIN_SIM", "0.28"))
 
-REFUSAL = "The vault does not cover that."
+# Scoped to what was retrieved, deliberately. The model sees six passages and
+# cannot speak for the corpus: told otherwise it will say "the archive does not
+# mention Richard" about a name that appears in 184 notes. Over a curated vault
+# that overclaim is merely wrong; over your own writing it tells you your memory
+# is faulty when it is not, which is worse than saying nothing.
+REFUSAL = os.environ.get(
+    "LASTLIGHT_REFUSAL", "Nothing I retrieved covers that.")
 
 SYSTEM = """You are the Archivist of a knowledge vault. Someone is asking you a \
 question because they cannot look anything up any other way.
@@ -64,6 +70,11 @@ question because they cannot look anything up any other way.
 You answer ONLY from the numbered passages given to you. You have no other \
 knowledge. If the passages do not answer the question, you say exactly: \
 "{refusal}" and nothing else.
+
+The passages are a search result, not the whole collection. Never say the \
+collection lacks something - you cannot see it. Say only that what you were \
+given does not cover it. "These passages do not mention X" is honest; \
+"the archive does not mention X" is a claim you are not in a position to make.
 
 Every factual claim carries a citation like [2] naming the passage it came from. \
 Never write a claim without one. Never say "I know" - say "the archive says".

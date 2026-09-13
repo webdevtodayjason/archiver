@@ -337,7 +337,6 @@ def add_text(jsonl_paths, source=None):
         sys.exit("no .jsonl shelves found there")
     new = skipped = empty = 0
     for f in files:
-        shelf = source or f.stem
         for line in f.open(encoding="utf-8"):
             line = line.strip()
             if not line:
@@ -352,12 +351,15 @@ def add_text(jsonl_paths, source=None):
             if not text:
                 empty += 1
                 continue
+            # A row may name its own shelf - a vault folder, a ZIM section -
+            # which is usually a better source line than the filename.
+            shelf = rec.get("shelf") or rec.get("source") or (source or f.stem)
             key = f"{f.stem}#{rec.get('path') or title}"
             try:
                 cur = c.execute(
                     "INSERT INTO doc(path,title,source,pages,sha,added_at) "
                     "VALUES(?,?,?,?,?,?)",
-                    (key, title[:200], shelf, 1,
+                    (key, title[:200], str(shelf)[:120], 1,
                      hashlib.sha1(key.encode()).hexdigest()[:16], now()))
             except sqlite3.IntegrityError:
                 skipped += 1

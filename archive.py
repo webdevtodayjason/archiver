@@ -597,6 +597,45 @@ def _chunk_selftest():
     return True
 
 
+def chunk_doc(c, doc_id):
+    """Chunk one document, leaving every other document's chunks alone.
+
+    chunk_all() deletes the chunk table and rebuilds it, which also has to drop
+    every vector, because chunk ids are rowids and SQLite reuses them. That is
+    correct for a rebuild and catastrophic for adding one note: writing a note
+    would cost a full re-embed of the archive. This adds the new rows instead,
+    so only the new chunks need embedding.
+    """
+    pages = c.execute(
+        "SELECT page_no,text FROM page WHERE doc_id=? AND status IN ('text','ocr') "
+        "AND chars>0 ORDER BY page_no", (doc_id,)).fetchall()
+    c.execute("DELETE FROM chunk WHERE doc_id=?", (doc_id,))
+    buf, first, last, made = "", None, None, 0
+    for p in pages:
+        if first is None:
+            first = p["page_no"]
+        last = p["page_no"]
+        buf += ("\n\n" if buf else "") + p["text"]
+        while len(buf) >= CHUNK_CHARS:
+            cut = buf.rfind(" ", 0, CHUNK_CHARS)
+            if cut <= CHUNK_OVERLAP:
+                cut = CHUNK_CHARS
+            piece = buf[:cut]
+            if not is_junk(piece):
+                c.execute("INSERT INTO chunk(doc_id,page_from,page_to,text,chars) "
+                          "VALUES(?,?,?,?,?)", (doc_id, first, last, piece, cut))
+                made += 1
+            buf = buf[max(0, cut - CHUNK_OVERLAP):]
+            first = last
+    if buf.strip() and not is_junk(buf):
+        c.execute("INSERT INTO chunk(doc_id,page_from,page_to,text,chars) "
+                  "VALUES(?,?,?,?,?)",
+                  (doc_id, first or 1, last or 1, buf.strip(), len(buf)))
+        made += 1
+    c.commit()
+    return made
+
+
 def chunk_all():
     """Group consecutive good pages into overlapping chunks, carrying the page
     range so a citation can point at something a human can open."""

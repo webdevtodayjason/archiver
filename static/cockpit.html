@@ -62,11 +62,20 @@ button:hover{border-color:var(--hot);color:var(--hot)}
 footer{display:flex;gap:18px;padding:6px 15px;border-top:1px solid var(--line);
   font-size:10.5px;color:var(--dim)}
 footer b{color:var(--steel);font-weight:400}
+#writer{position:fixed;inset:0;background:#040605ee;backdrop-filter:blur(3px);
+  display:none;place-items:center;z-index:41;padding:30px}
+#writer.on{display:grid}
+#writer .box{background:var(--panel);border:1px solid var(--line2);border-radius:8px;
+  max-width:760px;width:100%;max-height:86vh;display:grid;grid-template-rows:auto 1fr}
+#writer .hd{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:baseline}
+#writer .hd .t{color:var(--white)}
+#writer .bd{padding:14px 17px;overflow:auto}
 #reader{position:fixed;inset:0;background:#040605ee;backdrop-filter:blur(3px);display:none;
   place-items:center;z-index:40;padding:30px}
 #reader.on{display:grid}
 #reader .box{background:var(--panel);border:1px solid var(--line2);border-radius:8px;
-  max-width:860px;width:100%;max-height:84vh;display:grid;grid-template-rows:auto 1fr}
+  max-width:880px;width:100%;max-height:86vh;display:grid;grid-template-rows:auto 1fr auto}
+.rask{border-top:1px solid var(--line);padding:11px 16px}
 #reader .hd{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:baseline}
 #reader .hd .t{color:var(--white)}
 #reader .bd{padding:14px 17px;overflow:auto;white-space:pre-wrap;line-height:1.66;color:var(--ink)}
@@ -78,6 +87,7 @@ footer b{color:var(--steel);font-weight:400}
     <span class="t">BRAIN</span>
     <span class="badge live" id="state">SETTLING</span>
     <span class="sp"></span>
+    <button id="newnote">+ note</button>
     <input id="q" placeholder="focus an entity…" autocomplete="off" style="width:210px">
     <span class="badge" id="clock">—</span>
   </header>
@@ -106,8 +116,8 @@ footer b{color:var(--steel);font-weight:400}
     <aside class="r">
       <h3>Inspector</h3>
       <div id="insp" class="empty">hover to inspect · click to focus</div>
-      <div class="sec" id="asksec" style="display:none">
-        <h3>Ask about <span id="askwhat" style="color:var(--steel)"></span></h3>
+      <div class="sec" id="asksec">
+        <h3>Ask <span id="askwhat" style="color:var(--steel)">everything</span></h3>
         <div class="ask"><input id="askq" placeholder="what did we decide?"><button id="askgo">Ask</button></div>
         <div id="ans"></div>
       </div>
@@ -118,10 +128,30 @@ footer b{color:var(--steel);font-weight:400}
     <span><b>esc</b> release</span><span><b>drag</b> pan</span><span><b>scroll</b> zoom</span>
   </footer>
 </div>
+<div id="writer"><div class="box">
+  <div class="hd"><span class="t">New note</span>
+    <span style="color:var(--dim)" id="w-vault"></span>
+    <span style="margin-left:auto;display:flex;gap:7px">
+      <button id="w-save">save</button><button id="w-close">close</button></span></div>
+  <div class="bd">
+    <input id="w-title" placeholder="title" style="width:100%;margin-bottom:8px">
+    <input id="w-shelf" placeholder="project (optional — becomes the folder)" style="width:100%;margin-bottom:8px">
+    <textarea id="w-text" placeholder="write it…" style="width:100%;min-height:280px;resize:vertical"></textarea>
+    <div id="w-msg" style="margin-top:8px;color:var(--dim)"></div>
+  </div>
+</div></div>
+
 <div id="reader"><div class="box">
   <div class="hd"><span class="t" id="r-title"></span><span style="color:var(--dim)" id="r-src"></span>
-    <span style="margin-left:auto"><button id="r-close">close</button></span></div>
+    <span style="margin-left:auto;display:flex;gap:7px">
+      <button id="r-copy">copy md</button>
+      <button id="r-dl">download</button>
+      <button id="r-close">close</button></span></div>
   <div class="bd" id="r-body"></div>
+  <div class="rask">
+    <div class="ask"><input id="r-q" placeholder="ask about this note…"><button id="r-go">Ask</button></div>
+    <div id="r-ans"></div>
+  </div>
 </div></div>
 <script>
 var $=function(i){return document.getElementById(i)};
@@ -161,12 +191,14 @@ function tick(){
   }
   draw(); requestAnimationFrame(tick);
 }
-function rad(d){return 2.4+Math.min(9,Math.sqrt(d.docs||1)*1.05)}
+function rad(d){return d.isproject?13:2.4+Math.min(9,Math.sqrt(d.docs||1)*1.05)}
 function draw(){
   ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height);
   ctx.setTransform(DPR*view.k,0,0,DPR*view.k,view.x*DPR,view.y*DPR);
   var sel=NODES.filter(function(d){return d.focus})[0]||hover;
-  var lit={}; if(sel){ lit[sel.id]=1;
+  var lit={};
+  if(sel && sel.isproject){ NODES.forEach(function(d){ if(d.inshelf) lit[d.id]=1; }); }
+  else if(sel){ lit[sel.id]=1;
     EDGES.forEach(function(e){ if(e.s===sel)lit[e.t.id]=1; if(e.t===sel)lit[e.s.id]=1; }); }
   ctx.lineWidth=0.65;
   EDGES.forEach(function(e){ if(!e.s||!e.t) return;
@@ -175,16 +207,18 @@ function draw(){
     ctx.beginPath();ctx.moveTo(e.s.x,e.s.y);ctx.lineTo(e.t.x,e.t.y);ctx.stroke();});
   NODES.forEach(function(d){
     var r=rad(d), isF=!!d.focus, near=sel&&!isF&&lit[d.id];
-    if(isF){ var g=ctx.createRadialGradient(d.x,d.y,r,d.x,d.y,r+26);
-      g.addColorStop(0,'rgba(74,222,128,.30)'); g.addColorStop(1,'rgba(74,222,128,0)');
-      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(d.x,d.y,r+26,0,6.2832); ctx.fill(); }
+    if(isF){ var hw=d.isproject?52:26;
+      var g=ctx.createRadialGradient(d.x,d.y,r,d.x,d.y,r+hw);
+      g.addColorStop(0,'rgba(74,222,128,'+(d.isproject?'.22':'.30')+')');
+      g.addColorStop(1,'rgba(74,222,128,0)');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(d.x,d.y,r+hw,0,6.2832); ctx.fill(); }
     ctx.beginPath();ctx.arc(d.x,d.y,r,0,6.2832);
     ctx.fillStyle = isF?'#8ef7b4' : near?'#4ade80'
       : (sel? 'rgba(45,80,60,.85)'
         : (d.inshelf? 'rgba(110,190,140,.95)'
           : (d.docs>=12?'rgba(95,158,122,.9)':'rgba(63,107,82,.8)')));
     ctx.fill();
-    if(d.docs>=14||isF||near||d===hover){
+    if(d.docs>=14||isF||near||d===hover||d.isproject){
       ctx.font=(isF?'bold ':'')+'10px ui-monospace,Menlo,monospace';
       ctx.fillStyle=isF?'#eafff2':(near?'rgba(185,242,208,.95)':'rgba(95,158,122,.75)');
       ctx.fillText(d.name,d.x+r+4,d.y+3);}});
@@ -199,11 +233,13 @@ cv.addEventListener('mousemove',function(e){var r=cv.getBoundingClientRect();
 cv.addEventListener('mousedown',function(e){drag={x:e.clientX,y:e.clientY}});
 window.addEventListener('mouseup',function(){drag=null});
 cv.addEventListener('click',function(e){var r=cv.getBoundingClientRect();
-  var h=at(e.clientX-r.left,e.clientY-r.top); if(h) load(h.name);});
+  var h=at(e.clientX-r.left,e.clientY-r.top);
+  if(h){ if(h.isproject) openShelf(h.name); else load(h.name); }});
 cv.addEventListener('wheel',function(e){e.preventDefault();
   view.k=Math.max(.25,Math.min(4,view.k*(e.deltaY<0?1.12:.89)));},{passive:false});
 document.addEventListener('keydown',function(e){
-  if(e.key==='Escape'){ if($('reader').classList.contains('on')) $('reader').classList.remove('on');
+  if(e.key==='Escape'){ if($('writer').classList.contains('on')) $('writer').classList.remove('on');
+    else if($('reader').classList.contains('on')) $('reader').classList.remove('on');
     else load(''); }});
 
 function inspect(name){
@@ -231,8 +267,8 @@ function load(f,shelf){
       var p=POS[n.id];                        // keep what is already on screen where it is,
       var a=i/d.nodes.length*6.2832;          // so the graph reorganises instead of jumping
       return Object.assign({},n,{x:p?p[0]:W/2+Math.cos(a)*240, y:p?p[1]:H/2+Math.sin(a)*240,
-        vx:0,vy:0,inshelf:n.inshelf||0,
-        focus:(f&&n.name.toLowerCase()===f.toLowerCase())?1:0});});
+        vx:0,vy:0,inshelf:n.inshelf||0,isproject:n.isproject||0,
+        focus:(n.isproject?1:(f&&!shelf&&n.name.toLowerCase()===f.toLowerCase())?1:0)});});
     var by={}; NODES.forEach(function(n){by[n.id]=n});
     EDGES=d.edges.map(function(e){return{s:by[e.a],t:by[e.b],w:e.w,n:e.n}})
                  .filter(function(e){return e.s&&e.t});
@@ -243,7 +279,7 @@ function load(f,shelf){
                           : (f? ('nebula · '+f) : 'corpus-linked relations');
     $('s-focus').textContent = shelf? ('project: '+shelf) : (f?('focus: '+f):'');
     if(f) inspect(f);
-    else if(!shelf){ $('asksec').style.display='none';
+    else if(!shelf){ $('askwhat').textContent='everything';
       $('insp').innerHTML='<div class="empty">hover to inspect · click to focus</div>'; }
   });
 }
@@ -270,16 +306,65 @@ function openShelf(name){
       +(d.notes||[]).map(function(x){return '<div class="item" data-note="'+esc(x.id)+'">'
         +'<div class="n">'+esc(x.title)+'</div></div>';}).join('')
       +'</div>';
-    $('asksec').style.display='block'; $('askwhat').textContent=d.name;
+    $('askwhat').textContent=d.name;
   });
 }
 function openNote(id){
   fetch('/api/note?id='+encodeURIComponent(id)).then(function(r){return r.json()}).then(function(d){
     if(d.error) return;
+    CUR={id:d.id,title:d.title,text:d.text||''};
     $('r-title').textContent=d.title; $('r-src').textContent=d.path||d.source;
-    $('r-body').textContent=d.text||'(empty)'; $('reader').classList.add('on');
+    $('r-body').textContent=d.text||'(empty)';
+    $('r-q').value=''; $('r-ans').innerHTML='';
+    $('reader').classList.add('on'); $('r-q').focus();
   });
 }
+function openWriter(){
+  fetch('/api/vault').then(function(r){return r.json()}).then(function(d){
+    $('w-vault').textContent='→ '+d.vault; });
+  $('w-title').value=''; $('w-text').value=''; $('w-msg').textContent='';
+  var sh=$('askwhat').textContent;
+  $('w-shelf').value=(sh&&sh!=='everything')?sh:'';
+  $('writer').classList.add('on'); $('w-title').focus();
+}
+$('newnote').addEventListener('click',openWriter);
+$('w-close').addEventListener('click',function(){$('writer').classList.remove('on')});
+$('writer').addEventListener('click',function(e){if(e.target===$('writer'))$('writer').classList.remove('on')});
+$('w-save').addEventListener('click',function(){
+  $('w-msg').textContent='writing…';
+  fetch('/api/note/new',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({title:$('w-title').value,text:$('w-text').value,shelf:$('w-shelf').value})})
+   .then(function(r){return r.json()}).then(function(d){
+     if(d.error){ $('w-msg').textContent=d.error; return; }
+     $('w-msg').textContent='saved to '+d.path+' · '+d.chunks+' chunks · '
+        +d.embedded+' embedded'+(d.warning?(' · '+d.warning):'');
+     projects(); load('');
+     setTimeout(function(){$('writer').classList.remove('on')},1400);
+   });
+});
+var CUR={id:null,title:'',text:''};
+function mdOf(){ return '# '+CUR.title+'\n\n'+CUR.text; }
+$('r-copy').addEventListener('click',function(){
+  navigator.clipboard.writeText(mdOf()).then(function(){
+    var b=$('r-copy'); b.textContent='copied'; setTimeout(function(){b.textContent='copy md'},1400); });
+});
+$('r-dl').addEventListener('click',function(){
+  var blob=new Blob([mdOf()],{type:'text/markdown'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=(CUR.title||'note').replace(/[\\/:*?"<>|]/g,'-')+'.md';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){URL.revokeObjectURL(a.href)},2000);
+});
+function askNote(){
+  var q=$('r-q').value.trim(); if(!q||!CUR.id) return;
+  $('r-ans').innerHTML='<div class="ans" style="color:var(--dim)">reading the note…</div>';
+  fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({q:q,doc:CUR.id})}).then(function(r){return r.json()}).then(function(d){
+      $('r-ans').innerHTML='<div class="ans">'+esc(d.answer||d.error)+'</div>'; });
+}
+$('r-go').addEventListener('click',askNote);
+$('r-q').addEventListener('keydown',function(e){if(e.key==='Enter')askNote()});
 $('r-close').addEventListener('click',function(){$('reader').classList.remove('on')});
 $('reader').addEventListener('click',function(e){if(e.target===$('reader'))$('reader').classList.remove('on')});
 document.addEventListener('click',function(e){

@@ -142,13 +142,37 @@ def window(c, focus=None, limit=220, shelf=None):
         rows = c.execute(
             "SELECT m.entity_id eid, COUNT(DISTINCT m.doc_id) n FROM mention m "
             "JOIN doc d ON d.id=m.doc_id WHERE d.source=? "
-            "GROUP BY m.entity_id ORDER BY n DESC LIMIT ?", (shelf, limit)).fetchall()
+            "GROUP BY m.entity_id ORDER BY n DESC LIMIT ?",
+            (shelf, max(40, limit - 60))).fetchall()
         ids = {r["eid"] for r in rows if r["eid"] in ents}
+        strength = {r["eid"]: r["n"] for r in rows}
+        # One ring of everything the project touches but does not own, so the
+        # project reads as a shape against a background instead of filling the
+        # screen with no edge to it.
+        ring = set()
+        for (x, y) in kept:
+            if x in ids and y not in ids:
+                ring.add(y)
+            elif y in ids and x not in ids:
+                ring.add(x)
+        ring = set(sorted(ring, key=lambda i: -ents[i]["deg"])[:60])
         nodes = [dict(ents[i], inshelf=1) for i in ids]
+        nodes += [dict(ents[i], inshelf=0) for i in ring if i in ents]
         edges = [{"a": x, "b": y, "w": round(w, 2), "n": n}
-                 for (x, y), (w, n) in kept.items() if x in ids and y in ids]
+                 for (x, y), (w, n) in kept.items()
+                 if (x in ids or x in ring) and (y in ids or y in ring)]
+        # The project itself, as a node. It gives the cluster something to orbit
+        # and something to centre on - a folder is a real thing in this archive,
+        # it simply had no dot before.
+        pid = -1
+        nodes.append({"id": pid, "name": shelf, "docs": max(20, len(ids)),
+                      "mentions": sum(strength.values()), "deg": len(ids),
+                      "inshelf": 1, "isproject": 1})
+        for eid in sorted(ids, key=lambda i: -strength.get(i, 0))[:28]:
+            edges.append({"a": pid, "b": eid,
+                          "w": 3.0, "n": strength.get(eid, 1)})
         return {"nodes": nodes, "edges": edges, "total_entities": len(ents),
-                "total_edges": len(kept), "notes": n_docs, "focus": "",
+                "total_edges": len(kept), "notes": n_docs, "focus": shelf,
                 "shelf": shelf}
     if focus:
         hit = next((e for e in ents.values()
@@ -158,10 +182,15 @@ def window(c, focus=None, limit=220, shelf=None):
         if hit:
             seeds = [hit["id"]]
     if not seeds:
-        # start from the strongest association in the archive, not the loudest
-        # node, then grow: the result is a connected region rather than a list.
-        top = sorted(kept.items(), key=lambda kv: -kv[1][0])[:12]
-        seeds = [x for (x, y), _ in top] + [y for (x, y), _ in top]
+        # Seed on the best-connected names, not the strongest edges. PMI is the
+        # right weight for an edge - it strips the bias toward names that appear
+        # everywhere - but it is exactly the wrong way to choose where to start,
+        # because it peaks on the rarest pairs. Two names in three notes that
+        # always co-occur score higher than anything real, so seeding that way
+        # opens on the most obscure corner of the archive and the crawl stalls
+        # there for want of edges to follow.
+        seeds = [e["id"] for e in
+                 sorted(ents.values(), key=lambda e: -e["deg"])[:10]]
     ids, frontier = set(seeds), list(seeds)
     while frontier and len(ids) < limit:
         cur = frontier.pop(0)
@@ -248,6 +277,38 @@ def note(c, doc_id):
             "path": d["path"], "text": text[:60000]}
 
 
+def ask_doc(c, doc_id, question):
+    """Answer about one note, from that note.
+
+    Retrieval is the wrong tool when the document is already in front of you:
+    it would fetch the passages most like the question from anywhere in the
+    archive, when what was asked was about this note. Hand over the note.
+    """
+    import archivist
+    d = note(c, doc_id)
+    if "error" in d:
+        return d
+    model, base, key = archivist.pick_chat()
+    body = {"model": model, "max_tokens": 700, "temperature": 0.2,
+            "chat_template_kwargs": {"enable_thinking": False},
+            "messages": [
+                {"role": "system", "content":
+                 "You are answering questions about one note from someone's own "
+                 "notes, reproduced below. Answer from it and nothing else. If "
+                 "the note does not say, say that it does not say - do not "
+                 "reach for what you know about the subject generally."},
+                {"role": "user", "content":
+                 f"NOTE: {d['title']} ({d['source']})\n\n{d['text'][:24000]}\n\n"
+                 f"QUESTION: {question}"}]}
+    try:
+        r = archivist.api("/v1/chat/completions", body, timeout=420,
+                          base=base, key=key)
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)[:200]}
+    return {"answer": (r["choices"][0]["message"].get("content") or "").strip(),
+            "scope": d["title"]}
+
+
 def ask(c, question, focus=""):
     """Put the question to the archive, narrowed to an entity when one is in view.
 
@@ -265,6 +326,96 @@ def ask(c, question, focus=""):
         return {"error": str(e)[:200]}
     return {"answer": r.get("answer"), "refused": r.get("refused"),
             "sources": r.get("sources") or [], "cited": r.get("cited") or []}
+
+
+VAULT_CFG = pathlib.Path(os.environ.get("BRAIN_VAULT_CONFIG") or
+                         (pathlib.Path.home() / ".config" / "tiiny-brain.json"))
+
+
+def vault_root():
+    """Where new notes are written.
+
+    Not a vault format of our own. New notes are markdown files in a folder,
+    which means an Obsidian user watches them appear in Obsidian and everyone
+    else just gets a folder. The promise was that your notes stay yours and stay
+    where they are; inventing a database to hold them would break it on the
+    first write.
+    """
+    try:
+        v = json.loads(VAULT_CFG.read_text()).get("vault")
+        if v and pathlib.Path(v).is_dir():
+            return pathlib.Path(v)
+    except Exception:  # noqa: BLE001
+        pass
+    d = pathlib.Path.home() / "brain" / "notes"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def set_vault(path):
+    d = pathlib.Path(path).expanduser()
+    if not d.is_dir():
+        return {"error": f"{d} is not a directory"}
+    VAULT_CFG.parent.mkdir(parents=True, exist_ok=True)
+    VAULT_CFG.write_text(json.dumps({"vault": str(d)}, indent=1))
+    return {"ok": True, "vault": str(d)}
+
+
+def new_note(c, title, text, shelf=""):
+    """Write a note to disk, then bring just that note into the archive."""
+    import archivist
+    title = " ".join((title or "").split())[:120]
+    if not title or not (text or "").strip():
+        return {"error": "a note needs a title and something in it"}
+    root = vault_root()
+    folder = root / shelf if shelf else root
+    folder.mkdir(parents=True, exist_ok=True)
+    safe = "".join(ch for ch in title if ch not in '\\/:*?"<>|').strip() or "note"
+    path = folder / (safe + ".md")
+    i = 2
+    while path.exists():
+        path = folder / f"{safe} ({i}).md"
+        i += 1
+    body = text if text.lstrip().startswith("#") else f"# {title}\n\n{text}"
+    path.write_text(body, encoding="utf-8")
+
+    key = f"brain#{path}"
+    try:
+        cur = c.execute(
+            "INSERT INTO doc(path,title,source,pages,sha,added_at) VALUES(?,?,?,?,?,?)",
+            (key, title, shelf or "(root)", 1,
+             __import__("hashlib").sha1(key.encode()).hexdigest()[:16],
+             archive.now()))
+    except sqlite3.IntegrityError:
+        return {"error": "a note with that path is already in the archive"}
+    doc_id = cur.lastrowid
+    c.execute("INSERT INTO page(doc_id,page_no,status,engine,conf,chars,text,done_at) "
+              "VALUES(?,1,'text','written',1.0,?,?,?)",
+              (doc_id, len(text), text, archive.now()))
+    c.commit()
+    made = archive.chunk_doc(c, doc_id)
+
+    embedded = 0
+    try:
+        rows = c.execute("SELECT ch.id, ch.text FROM chunk ch "
+                         "LEFT JOIN vec v ON v.chunk_id=ch.id "
+                         "WHERE ch.doc_id=? AND v.chunk_id IS NULL", (doc_id,)).fetchall()
+        if rows:
+            archivist._schema(c)
+            vecs = archivist.embed([r["text"][:2000] for r in rows])
+            for r, v in zip(rows, vecs):
+                arr = archivist.norm(v)
+                c.execute("INSERT OR REPLACE INTO vec(chunk_id,dim,v) VALUES(?,?,?)",
+                          (r["id"], len(arr),
+                           __import__("struct").pack(f"{len(arr)}f", *arr)))
+            c.commit()
+            embedded = len(rows)
+    except Exception as e:  # noqa: BLE001 - the note is safe on disk either way
+        return {"ok": True, "id": doc_id, "path": str(path), "chunks": made,
+                "embedded": 0, "warning": f"written and indexed, not embedded: {str(e)[:120]}"}
+    _graph._cache = None          # the entity graph is stale now
+    return {"ok": True, "id": doc_id, "path": str(path),
+            "chunks": made, "embedded": embedded}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -302,6 +453,8 @@ class Handler(BaseHTTPRequestHandler):
                 {"a": ents[x]["name"], "b": ents[y]["name"],
                  "w": round(w, 2), "shared_notes": cnt, "common": sh}
                 for _, x, y, w, cnt, sh in bridges(ents, kept, 30)])
+        if u.path == "/api/vault":
+            return self._json({"vault": str(vault_root())})
         if u.path == "/api/shelves":
             return self._json(shelves(c))
         if u.path == "/api/shelf":
@@ -319,10 +472,19 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or "{}")
         except ValueError:
             body = {}
+        if u.path == "/api/note/new":
+            r = new_note(_db(), body.get("title"), body.get("text") or "",
+                         (body.get("shelf") or "").strip())
+            return self._json(r, 200 if r.get("ok") else 400)
+        if u.path == "/api/vault":
+            return self._json(set_vault(body.get("path") or ""))
         if u.path == "/api/ask":
             qn = (body.get("q") or "").strip()
             if not qn:
                 return self._json({"error": "ask something"}, 400)
+            doc = body.get("doc")
+            if doc:
+                return self._json(ask_doc(_db(), int(doc), qn))
             return self._json(ask(_db(), qn, (body.get("focus") or "").strip()))
         return self._send(404, "no such path", "text/plain")
 

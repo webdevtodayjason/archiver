@@ -238,7 +238,7 @@ def mentions_of(c, name, limit=40):
     return row, rs
 
 
-def who(name, limit=30):
+def profile(name, limit=30):
     """Answer from an entity's mentions instead of from nearest neighbours.
 
     This is the whole point. Retrieval hands the model the passages most like
@@ -246,16 +246,16 @@ def who(name, limit=30):
     matching words. This hands it the passages that name them at all, which for
     someone mentioned across a hundred notes is a completely different set - and
     the only one that can say who they are.
+
+    Returns the answer rather than printing it, so the cockpit can use the same
+    path the CLI does.
     """
     import archivist
     c = archive.db()
     _schema(c)
     row, rs = mentions_of(c, name, limit)
     if not row:
-        print(f"  no entity called {name!r} in this archive")
-        return 1
-    print(f"  {row['name']}: named in {row['docs']} notes, {row['mentions']} times")
-    print(f"  reading {len(rs)} of them\n")
+        return {"error": f"no entity called {name!r} in this archive"}
     passages = "\n\n".join(
         f"[{i+1}] ({r['title']} · {r['source']})\n{r['text'][:900]}"
         for i, r in enumerate(rs))
@@ -276,14 +276,26 @@ def who(name, limit=30):
                  f"PASSAGES, all mentioning \"{row['name']}\":\n\n{passages}\n\n"
                  f"QUESTION: who or what is {row['name']}?"}]}
     d = archivist.api("/v1/chat/completions", body, timeout=420, base=base, key=key)
-    print("  " + (d["choices"][0]["message"].get("content") or "").strip().replace("\n", "\n  "))
-    print("\n  drawn from")
     seen = []
     for r in rs:
         tag = f"{r['title']} · {r['source']}"
         if tag not in seen:
             seen.append(tag)
-    for t in seen[:8]:
+    return {"name": row["name"], "docs": row["docs"], "mentions": row["mentions"],
+            "read": len(rs), "sources": seen,
+            "answer": (d["choices"][0]["message"].get("content") or "").strip()}
+
+
+def who(name, limit=30):
+    d = profile(name, limit)
+    if d.get("error"):
+        print("  " + d["error"])
+        return 1
+    print(f"  {d['name']}: named in {d['docs']} notes, {d['mentions']} times")
+    print(f"  reading {d['read']} of them\n")
+    print("  " + d["answer"].replace("\n", "\n  "))
+    print("\n  drawn from")
+    for t in d["sources"][:8]:
         print(f"    {t}")
     return 0
 

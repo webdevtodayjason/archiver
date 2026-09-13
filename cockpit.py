@@ -23,6 +23,7 @@ import json
 import math
 import os
 import pathlib
+import re
 import sqlite3
 import sys
 import urllib.parse
@@ -309,6 +310,10 @@ def ask_doc(c, doc_id, question):
             "scope": d["title"]}
 
 
+ASKING_ABOUT = re.compile(
+    r"^\s*(?:who|what)(?:'s|\s+is|\s+are|\s+was|\s+were)\s+(.{2,60}?)\s*\??$", re.I)
+
+
 def ask(c, question, focus=""):
     """Put the question to the archive, narrowed to an entity when one is in view.
 
@@ -317,6 +322,26 @@ def ask(c, question, focus=""):
     say. Focus supplies the context the question was asked inside.
     """
     import archivist
+    if focus.strip().lower() == "everything":
+        focus = ""          # a UI label, not an entity: prepending it poisons the query
+
+    # "who is Richard" is not a retrieval question. Nearest-neighbour search hands
+    # back whichever notes happen to name him near matching words; what answers it
+    # is every passage that names him at all. When the question is that shape and
+    # the name is one the archive actually knows, take the mention path instead.
+    m = ASKING_ABOUT.match(question)
+    if m:
+        name = re.sub(r"^(?:the|a|an)\s+", "", m.group(1).strip(), flags=re.I)
+        row = c.execute("SELECT name FROM entity WHERE name=? COLLATE NOCASE "
+                        "AND docs >= 3", (name,)).fetchone()
+        if row:
+            import entities
+            d = entities.profile(row["name"])
+            if not d.get("error"):
+                return {"answer": d["answer"], "refused": False,
+                        "sources": d["sources"][:8], "cited": [],
+                        "via": f"named in {d['docs']} notes"}
+
     q = f"{focus}: {question}" if focus else question
     try:
         r = archivist.ask(q, show_sources=False, quiet=True)
@@ -356,8 +381,7 @@ def set_vault(path):
     d = pathlib.Path(path).expanduser()
     if not d.is_dir():
         return {"error": f"{d} is not a directory"}
-    VAULT_CFG.parent.mkdir(parents=True, exist_ok=True)
-    VAULT_CFG.write_text(json.dumps({"vault": str(d)}, indent=1))
+    _save_cfg(vault=str(d))
     return {"ok": True, "vault": str(d)}
 
 
@@ -418,6 +442,96 @@ def new_note(c, title, text, shelf=""):
             "chunks": made, "embedded": embedded}
 
 
+def _cfg():
+    try:
+        return json.loads(VAULT_CFG.read_text())
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _save_cfg(**kw):
+    c = _cfg()
+    c.update({k: v for k, v in kw.items() if v is not None})
+    VAULT_CFG.parent.mkdir(parents=True, exist_ok=True)
+    VAULT_CFG.write_text(json.dumps(c, indent=1))
+    try:
+        VAULT_CFG.chmod(0o600)
+    except OSError:
+        pass
+    return c
+
+
+def probe(url, key=None, timeout=4):
+    """Does this endpoint answer, and what does it say. Never raises."""
+    import urllib.request
+    import urllib.error
+    req = urllib.request.Request(url)
+    if key:
+        req.add_header("Authorization", f"Bearer {key}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return {"ok": True, "code": r.status}
+    except urllib.error.HTTPError as e:
+        # 401 means it is there and wants a key, which is still "reachable"
+        return {"ok": e.code in (401, 403), "code": e.code}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "code": 0, "error": str(e)[:90]}
+
+
+def apply_cfg():
+    """Carry saved settings into this process. Env always wins."""
+    import archivist
+    c = _cfg()
+    if c.get("host") and not os.environ.get("TIINY_HOST"):
+        archivist.HOST = c["host"]
+    if c.get("port") and not os.environ.get("TIINY_PORT"):
+        archivist.PORT = str(c["port"])
+    if c.get("key") and not os.environ.get("TIINY_KEY"):
+        archivist.KEY = c["key"]
+    if c.get("chat_url") and not os.environ.get("LASTLIGHT_CHAT_URL"):
+        os.environ["LASTLIGHT_CHAT_URL"] = c["chat_url"]
+
+
+def settings(c):
+    """Everything a person needs to answer 'is this working?' without a terminal."""
+    import archivist
+    host, port = archivist.HOST, archivist.PORT
+    base = f"http://{host}:{port}" if str(port) != "80" else f"http://{host}"
+    dev = probe(f"{base}/v1/models", archivist.KEY)
+    emb = {"ok": False}
+    if dev.get("ok"):
+        try:
+            archivist.embed(["ping"])
+            emb = {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            emb = {"ok": False, "error": str(e)[:110]}
+    chat_url = os.environ.get("LASTLIGHT_CHAT_URL") or _cfg().get("chat_url") or ""
+    chat = probe((chat_url or base).rstrip("/") + "/v1/models",
+                 os.environ.get("LASTLIGHT_CHAT_KEY") or archivist.KEY)
+    q = lambda sql: c.execute(sql).fetchone()[0]
+    vec = q("SELECT COUNT(*) FROM vec") if c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='vec'"
+    ).fetchone() else 0
+    ch = q("SELECT COUNT(*) FROM chunk")
+    return {
+        "device": {"host": host, "port": port, "reachable": dev.get("ok"),
+                   "code": dev.get("code"), "error": dev.get("error"),
+                   "key_set": bool(archivist.KEY),
+                   "key_hint": (archivist.KEY[:4] + "\u2026" + archivist.KEY[-4:])
+                               if archivist.KEY else ""},
+        "embedding": {"model": archivist.EMBED_MODEL, "working": emb.get("ok"),
+                      "error": emb.get("error")},
+        "chat": {"url": chat_url or base, "source": "override" if chat_url else "device",
+                 "reachable": chat.get("ok"), "code": chat.get("code")},
+        "vault": str(vault_root()),
+        "archive": str(archive.HOME),
+        "corpus": {"notes": q("SELECT COUNT(*) FROM doc"), "chunks": ch,
+                   "vectors": vec, "entities": q("SELECT COUNT(*) FROM entity"),
+                   "unembedded": ch - vec},
+        "config_file": str(VAULT_CFG),
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -455,6 +569,8 @@ class Handler(BaseHTTPRequestHandler):
                 for _, x, y, w, cnt, sh in bridges(ents, kept, 30)])
         if u.path == "/api/vault":
             return self._json({"vault": str(vault_root())})
+        if u.path == "/api/settings":
+            return self._json(settings(c))
         if u.path == "/api/shelves":
             return self._json(shelves(c))
         if u.path == "/api/shelf":
@@ -478,6 +594,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(r, 200 if r.get("ok") else 400)
         if u.path == "/api/vault":
             return self._json(set_vault(body.get("path") or ""))
+        if u.path == "/api/settings":
+            import archivist
+            changed = {}
+            if body.get("host"):
+                archivist.HOST = body["host"].strip(); changed["host"] = archivist.HOST
+            if body.get("port"):
+                archivist.PORT = str(body["port"]).strip(); changed["port"] = archivist.PORT
+            if body.get("key"):
+                archivist.KEY = body["key"].strip(); changed["key"] = "set"
+            if body.get("chat_url") is not None:
+                _save_cfg(chat_url=body["chat_url"].strip())
+                os.environ["LASTLIGHT_CHAT_URL"] = body["chat_url"].strip()
+                changed["chat_url"] = body["chat_url"].strip()
+            if changed.get("host") or changed.get("key") or changed.get("port"):
+                _save_cfg(host=changed.get("host"), port=changed.get("port"),
+                          key=(archivist.KEY if body.get("key") else None))
+            return self._json({"ok": True, "changed": list(changed),
+                               "settings": settings(_db())})
         if u.path == "/api/ask":
             qn = (body.get("q") or "").strip()
             if not qn:
@@ -490,6 +624,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def run(port=8500):
+    apply_cfg()
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     srv.daemon_threads = True
     print(f"\n  cockpit   http://127.0.0.1:{port}/")

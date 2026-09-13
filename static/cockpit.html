@@ -59,6 +59,47 @@ button{background:var(--panel);border:1px solid var(--line2);color:var(--steel);
 button:hover{border-color:var(--hot);color:var(--hot)}
 .ans{margin-top:9px;padding:9px 10px;background:var(--panel);border:1px solid var(--line);
   border-radius:5px;font-size:12px;line-height:1.62;white-space:pre-wrap}
+/* the rail is a chat window: history scrolls, the input never moves */
+aside.r{padding:0;display:grid;grid-template-rows:minmax(0,1fr) auto;overflow:hidden}
+.rscroll{overflow:auto;min-height:0;padding:12px;scroll-behavior:smooth}
+.pinned{border-top:1px solid var(--line2);padding:9px 12px 11px;background:#070b09}
+.pinned h3{margin-bottom:6px}
+.you{margin-top:13px;color:var(--white);border-left:2px solid var(--hot);padding-left:8px}
+.you .sc{color:var(--dim);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase}
+.cite{color:var(--dim);font-size:11px;margin-top:3px}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;background:var(--dim);flex:none}
+.dot.up{background:var(--hot);box-shadow:0 0 7px var(--hot)}
+.dot.down{background:#ff5f56;box-shadow:0 0 7px #ff5f56}
+.dot.warn{background:#f0c040;box-shadow:0 0 7px #f0c040}
+#health{display:flex;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--line2);
+  border-radius:11px;padding:2px 9px;font-size:10px;letter-spacing:.13em;color:var(--steel)}
+#health:hover{border-color:var(--hot);color:var(--hot)}
+.modal{position:fixed;inset:0;background:#040605ee;backdrop-filter:blur(3px);display:none;
+  place-items:center;z-index:42;padding:30px}
+.modal.on{display:grid}
+.modal .box{background:var(--panel);border:1px solid var(--line2);border-radius:8px;
+  max-width:720px;width:100%;max-height:86vh;display:grid;grid-template-rows:auto 1fr}
+.modal .hd{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center}
+.modal .hd .t{color:var(--white);letter-spacing:.18em}
+.modal .bd{padding:15px 17px;overflow:auto}
+.chk{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--line)}
+.chk .w{margin-left:auto;color:var(--dim);font-size:11px;text-align:right;max-width:54%}
+.chk .l{color:var(--white)}
+.fld{margin-top:11px}
+.fld label{display:block;color:var(--dim);font-size:10.5px;letter-spacing:.13em;
+  text-transform:uppercase;margin-bottom:3px}
+.fld input{width:100%}
+.fld .hint{color:var(--dim);font-size:11px;margin-top:3px}
+.tabs{display:flex;gap:7px;margin-bottom:13px;flex-wrap:wrap}
+.tabs button.on{border-color:var(--hot);color:var(--hot);background:#0d1a12}
+.tab{display:none}.tab.on{display:block}
+.tab h4{margin:15px 0 5px;color:var(--white);font-size:12px;font-weight:500}
+.tab h4:first-child{margin-top:0}
+.tab p{margin:0 0 7px}
+.tab code{color:var(--hot)}
+.banner{display:none;align-items:center;gap:10px;padding:7px 15px;background:#1a0f0c;
+  border-bottom:1px solid #55261d;color:#ffb4a8;font-size:11.5px}
+.banner.on{display:flex}
 footer{display:flex;gap:18px;padding:6px 15px;border-top:1px solid var(--line);
   font-size:10.5px;color:var(--dim)}
 footer b{color:var(--steel);font-weight:400}
@@ -87,10 +128,14 @@ footer b{color:var(--steel);font-weight:400}
     <span class="t">BRAIN</span>
     <span class="badge live" id="state">SETTLING</span>
     <span class="sp"></span>
+    <span id="health"><span class="dot" id="hdot"></span><span id="hlbl">CHECKING</span></span>
     <button id="newnote">+ note</button>
+    <button id="helpbtn">?</button>
     <input id="q" placeholder="focus an entity…" autocomplete="off" style="width:210px">
     <span class="badge" id="clock">—</span>
   </header>
+  <div class="banner" id="banner"><span id="bantext"></span>
+    <button style="margin-left:auto" id="banfix">open setup</button></div>
   <div class="strip">
     <span><b id="s-notes">—</b> notes</span><span><b id="s-ents">—</b> entities</span>
     <span><b id="s-ment">—</b> mentions</span><span><b id="s-edges">—</b> links</span>
@@ -114,12 +159,14 @@ footer b{color:var(--steel);font-weight:400}
       <div class="cnt" id="cnt"></div>
     </div>
     <aside class="r">
-      <h3>Inspector</h3>
-      <div id="insp" class="empty">hover to inspect · click to focus</div>
-      <div class="sec" id="asksec">
+      <div class="rscroll" id="rscroll">
+        <h3>Inspector</h3>
+        <div id="insp" class="empty">hover to inspect · click to focus</div>
+        <div id="ans"></div>
+      </div>
+      <div class="pinned" id="asksec">
         <h3>Ask <span id="askwhat" style="color:var(--steel)">everything</span></h3>
         <div class="ask"><input id="askq" placeholder="what did we decide?"><button id="askgo">Ask</button></div>
-        <div id="ans"></div>
       </div>
     </aside>
   </main>
@@ -149,14 +196,141 @@ footer b{color:var(--steel);font-weight:400}
       <button id="r-close">close</button></span></div>
   <div class="bd" id="r-body"></div>
   <div class="rask">
+    <div id="r-ans" style="max-height:30vh;overflow:auto"></div>
     <div class="ask"><input id="r-q" placeholder="ask about this note…"><button id="r-go">Ask</button></div>
-    <div id="r-ans"></div>
+  </div>
+</div></div>
+<div id="setup" class="modal"><div class="box">
+  <div class="hd"><span class="t">SETUP</span>
+    <span style="color:var(--dim)" id="set-file"></span>
+    <span style="margin-left:auto;display:flex;gap:7px">
+      <button id="set-recheck">re-check</button><button id="set-close">close</button></span></div>
+  <div class="bd">
+    <h3>Is it working</h3>
+    <div id="set-checks"><div class="empty">checking…</div></div>
+
+    <div class="sec"><h3>Where the thinking happens</h3>
+      <div class="fld"><label>device host</label><input id="set-host" placeholder="tiiny">
+        <div class="hint">the Tiiny, or any OpenAI-compatible endpoint. embeddings come from here.</div></div>
+      <div class="fld"><label>port</label><input id="set-port" placeholder="80">
+        <div class="hint">firmware 1.0.0 moved the gateway to port 80. older builds used 8800.</div></div>
+      <div class="fld"><label>api key</label><input id="set-key" type="password" placeholder="leave blank to keep">
+        <div class="hint" id="set-keyhint"></div></div>
+      <div class="fld"><label>chat endpoint (optional)</label><input id="set-chat"
+          placeholder="http://host:port — blank means use the device">
+        <div class="hint">point the answering model somewhere else and keep embeddings on the Tiiny.</div></div>
+    </div>
+
+    <div class="sec"><h3>Where your notes live</h3>
+      <div class="fld"><label>vault folder</label><input id="set-vault" placeholder="/Users/you/brain/notes">
+        <div class="hint">new notes are written here. point it at an Obsidian vault to write straight into it.</div></div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:15px;align-items:center">
+      <button id="set-save">save</button><span id="set-msg" style="color:var(--dim)"></span></div>
+  </div>
+</div></div>
+
+<div id="help" class="modal"><div class="box">
+  <div class="hd"><span class="t">HELP</span>
+    <span style="margin-left:auto"><button id="help-close">close</button></span></div>
+  <div class="bd">
+    <div class="tabs">
+      <button class="on" data-tab="t-start">start here</button>
+      <button data-tab="t-map">the map</button>
+      <button data-tab="t-ask">asking</button>
+      <button data-tab="t-write">writing</button>
+      <button data-tab="t-load">loading notes</button>
+      <button data-tab="t-trouble">when it breaks</button>
+    </div>
+
+    <div class="tab on" id="t-start">
+      <h4>What this is</h4>
+      <p>Your notes, held by a machine on your desk. Nothing leaves the house. The
+         device reads every note, works out what the recurring names are, and draws
+         the ones that keep turning up together.</p>
+      <h4>Three things to try right now</h4>
+      <p>1. Click a project on the left. The field rebuilds around it.</p>
+      <p>2. Click any name in the graph. It pins to the centre and the right rail
+         fills with where it appears.</p>
+      <p>3. Type a question in the box at the bottom right. Answers stack above it.</p>
+      <h4>Is it on?</h4>
+      <p>The light in the top bar. Green means the device answered, embeddings ran,
+         and the answering model is reachable. Click it for the detail.</p>
+    </div>
+
+    <div class="tab" id="t-map">
+      <h4>What the dots are</h4>
+      <p>Names that appear across many notes. Size is how often. A line between two
+         means they show up in the same notes more than chance would explain.</p>
+      <h4>Moving around</h4>
+      <p><code>hover</code> inspect · <code>click</code> focus and rebuild ·
+         <code>drag</code> pan · <code>scroll</code> zoom · <code>esc</code> release.</p>
+      <h4>Why some names are missing</h4>
+      <p>The graph draws the strongest few links per name, not all of them. The full
+         set is in the corpus. Focus a name to pull its own neighbourhood forward.</p>
+    </div>
+
+    <div class="tab" id="t-ask">
+      <h4>Scope</h4>
+      <p>The word next to <b>Ask</b> is what the question is aimed at:
+         <code>everything</code>, one entity, or one project. Click something to
+         change it.</p>
+      <h4>Answers cite</h4>
+      <p>Every answer names the notes it came from. If nothing retrieved covers the
+         question, it says so instead of inventing one.</p>
+      <h4>Asking one note</h4>
+      <p>Open a note and use the box at the bottom of that window. That reads the
+         whole note rather than searching.</p>
+    </div>
+
+    <div class="tab" id="t-write">
+      <h4>New notes</h4>
+      <p><b>+ note</b> in the top bar. Title, optional project, body. It lands in your
+         vault as plain markdown, gets chunked and embedded, and is answerable in
+         seconds. No import step.</p>
+      <h4>Taking one with you</h4>
+      <p>Open any note: <b>copy md</b> or <b>download</b>. Plain markdown, no wrapper.</p>
+    </div>
+
+    <div class="tab" id="t-load">
+      <h4>From Obsidian</h4>
+      <p><code>python3 md2jsonl.py ~/vault out.jsonl</code> then
+         <code>archivist add-text out.jsonl</code>. Folder becomes the project,
+         filename becomes the title.</p>
+      <h4>Then</h4>
+      <p><code>archivist chunk</code> then <code>archivist index</code> to embed, then
+         <code>archivist entities</code> to rebuild the name index. Re-running only
+         does the new notes.</p>
+      <h4>From PDFs</h4>
+      <p><code>archivist add *.pdf</code>. Scanned pages go through OCR on the device.</p>
+    </div>
+
+    <div class="tab" id="t-trouble">
+      <h4>Light is red</h4>
+      <p>The device did not answer. Check the host in Setup. On firmware 1.0.0 the
+         gateway is port <code>80</code>, not <code>8800</code>. A <code>401</code>
+         means it is there and the key is wrong.</p>
+      <h4>Light is amber</h4>
+      <p>The device answered but something downstream did not: usually the embedding
+         model is not loaded, or the chat endpoint override points at nothing. Setup
+         names which one.</p>
+      <h4>Answers say nothing covers it</h4>
+      <p>That is the honest failure, not a bug. Open Setup and look at
+         <b>corpus is indexed</b>. If chunks and vectors do not match, run
+         <code>archivist index</code>.</p>
+      <h4>Nothing in the graph</h4>
+      <p>Entities have not been built yet: <code>archivist entities</code>.</p>
+    </div>
   </div>
 </div></div>
 <script>
 var $=function(i){return document.getElementById(i)};
 var fmt=function(n){return n==null?'—':n.toLocaleString()};
 var esc=function(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML};
+/* the model writes markdown; only bold and bullets ever show up, so only those are handled */
+var md=function(s){return esc(s).replace(/\*\*([^*]+)\*\*/g,'<b style="color:var(--white)">$1</b>')
+                                .replace(/^\s*[*-]\s+/gm,'· ')};
 var cv=$('c'), ctx=cv.getContext('2d'), DPR=window.devicePixelRatio||1;
 var NODES=[], EDGES=[], POS={}, focus='', hover=null, alpha=1, view={x:0,y:0,k:1}, drag=null;
 
@@ -238,7 +412,9 @@ cv.addEventListener('click',function(e){var r=cv.getBoundingClientRect();
 cv.addEventListener('wheel',function(e){e.preventDefault();
   view.k=Math.max(.25,Math.min(4,view.k*(e.deltaY<0?1.12:.89)));},{passive:false});
 document.addEventListener('keydown',function(e){
-  if(e.key==='Escape'){ if($('writer').classList.contains('on')) $('writer').classList.remove('on');
+  if(e.key==='Escape'){ if($('help').classList.contains('on')) $('help').classList.remove('on');
+    else if($('setup').classList.contains('on')) $('setup').classList.remove('on');
+    else if($('writer').classList.contains('on')) $('writer').classList.remove('on');
     else if($('reader').classList.contains('on')) $('reader').classList.remove('on');
     else load(''); }});
 
@@ -254,7 +430,7 @@ function inspect(name){
       +(d.notes||[]).slice(0,12).map(function(x){return '<div class="item" data-note="'+esc(x.id)+'">'
         +'<div class="n">'+esc(x.title)+'</div><div class="m">'+esc(x.source)+'</div></div>';}).join('')
       +'</div>';
-    $('asksec').style.display='block'; $('askwhat').textContent=d.name;
+    $('askwhat').textContent=d.name; bottom();
   });
 }
 function load(f,shelf){
@@ -361,7 +537,7 @@ function askNote(){
   $('r-ans').innerHTML='<div class="ans" style="color:var(--dim)">reading the note…</div>';
   fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({q:q,doc:CUR.id})}).then(function(r){return r.json()}).then(function(d){
-      $('r-ans').innerHTML='<div class="ans">'+esc(d.answer||d.error)+'</div>'; });
+      $('r-ans').innerHTML='<div class="ans">'+md(d.answer||d.error)+'</div>'; });
 }
 $('r-go').addEventListener('click',askNote);
 $('r-q').addEventListener('keydown',function(e){if(e.key==='Enter')askNote()});
@@ -372,20 +548,106 @@ document.addEventListener('click',function(e){
   var s=e.target.closest('[data-shelf]'); if(s){ openShelf(s.getAttribute('data-shelf')); return; }
   var n=e.target.closest('[data-note]'); if(n){ openNote(n.getAttribute('data-note')); }
 });
+function bottom(){ var r=$('rscroll'); r.scrollTop=r.scrollHeight; }
+var TURN=0;
 function doAsk(){
   var q=$('askq').value.trim(); if(!q) return;
-  $('ans').innerHTML='<div class="ans" style="color:var(--dim)">thinking…</div>';
+  var id='t'+(++TURN), scope=$('askwhat').textContent;
+  $('ans').insertAdjacentHTML('beforeend',
+    '<div class="you"><div class="sc">'+esc(scope)+'</div>'+esc(q)+'</div>'
+    +'<div id="'+id+'"><div class="ans" style="color:var(--dim)">thinking…</div></div>');
+  $('askq').value=''; bottom();
   fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({q:q,focus:$('askwhat').textContent})})
+    body:JSON.stringify({q:q,focus:scope==='everything'?'':scope})})
    .then(function(r){return r.json()}).then(function(d){
-    if(d.error){$('ans').innerHTML='<div class="ans">'+esc(d.error)+'</div>';return;}
-    $('ans').innerHTML='<div class="ans">'+esc(d.answer)+'</div>'
-      +(d.sources||[]).slice(0,5).map(function(s){
-        return '<div class="m" style="color:var(--dim);margin-top:4px">'+esc(s)+'</div>';}).join('');
-  });
+    $(id).innerHTML = d.error ? '<div class="ans">'+esc(d.error)+'</div>'
+      : '<div class="ans">'+md(d.answer)+'</div>'
+        +(d.via?'<div class="cite" style="color:var(--steel)">read every mention · '
+                +esc(d.via)+'</div>':'')
+        +(d.sources||[]).slice(0,5).map(function(x){
+          return '<div class="cite">'+esc(x)+'</div>';}).join('');
+    bottom();
+   }).catch(function(e){
+    $(id).innerHTML='<div class="ans">'+esc(String(e))+'</div>'; bottom(); });
 }
 $('askgo').addEventListener('click',doAsk);
 $('askq').addEventListener('keydown',function(e){if(e.key==='Enter')doAsk()});
+function pill(ok,label,detail){
+  return '<div class="chk"><span class="dot '+(ok?'up':'down')+'"></span>'
+        +'<span class="l">'+esc(label)+'</span><span class="w">'+esc(detail)+'</span></div>';
+}
+var SET=null;
+function health(fill){
+  $('hdot').className='dot'; $('hlbl').textContent='CHECKING';
+  return fetch('/api/settings').then(function(r){return r.json()}).then(function(d){
+    SET=d;
+    var dev=d.device.reachable, emb=d.embedding.working, cht=d.chat.reachable;
+    var all=dev&&emb&&cht;
+    $('hdot').className='dot '+(dev?(all?'up':'warn'):'down');
+    $('hlbl').textContent=all?'READY':(dev?'DEGRADED':'NO DEVICE');
+    var bad=[];
+    if(!dev) bad.push('the device at '+d.device.host+':'+d.device.port+' did not answer'
+                      +(d.device.code===401?' (key rejected)':''));
+    else{ if(!emb) bad.push('embeddings are not running ('+d.embedding.model+')');
+          if(!cht) bad.push('the answering model at '+d.chat.url+' did not answer'); }
+    if(d.corpus.unembedded>0) bad.push(fmt(d.corpus.unembedded)+' chunks are not embedded yet');
+    $('banner').classList.toggle('on', bad.length>0);
+    $('bantext').textContent=bad.join(' · ');
+    if(fill){
+      $('set-checks').innerHTML=
+         pill(dev,'device answers', d.device.host+':'+d.device.port
+              +(d.device.code?(' · HTTP '+d.device.code):'')+(d.device.error?(' · '+d.device.error):''))
+        +pill(d.device.key_set,'api key', d.device.key_hint||'not set')
+        +pill(emb,'embeddings run', d.embedding.model+(d.embedding.error?(' · '+d.embedding.error):''))
+        +pill(cht,'answering model answers', d.chat.url+' ('+d.chat.source+')')
+        +pill(d.corpus.vectors>0&&d.corpus.unembedded===0,'corpus is indexed',
+              fmt(d.corpus.notes)+' notes · '+fmt(d.corpus.chunks)+' chunks · '
+              +fmt(d.corpus.vectors)+' vectors'
+              +(d.corpus.unembedded>0?(' · '+fmt(d.corpus.unembedded)+' waiting'):''))
+        +pill(d.corpus.entities>0,'names extracted', fmt(d.corpus.entities)+' entities');
+      $('set-host').value=d.device.host; $('set-port').value=d.device.port;
+      $('set-chat').value=(d.chat.source==='override')?d.chat.url:'';
+      $('set-vault').value=d.vault; $('set-key').value='';
+      $('set-keyhint').textContent=d.device.key_set?('currently '+d.device.key_hint):'no key set';
+      $('set-file').textContent=d.config_file;
+    }
+    return d;
+  }).catch(function(){ $('hdot').className='dot down'; $('hlbl').textContent='OFFLINE'; });
+}
+function openSetup(){ $('setup').classList.add('on');
+  $('set-checks').innerHTML='<div class="empty">checking…</div>'; health(true); }
+$('health').addEventListener('click',openSetup);
+$('banfix').addEventListener('click',openSetup);
+$('set-close').addEventListener('click',function(){$('setup').classList.remove('on')});
+$('setup').addEventListener('click',function(e){if(e.target===$('setup'))$('setup').classList.remove('on')});
+$('set-recheck').addEventListener('click',function(){
+  $('set-checks').innerHTML='<div class="empty">checking…</div>'; health(true); });
+$('set-save').addEventListener('click',function(){
+  $('set-msg').textContent='saving…';
+  var body={host:$('set-host').value,port:$('set-port').value,chat_url:$('set-chat').value};
+  if($('set-key').value.trim()) body.key=$('set-key').value.trim();
+  var v=$('set-vault').value.trim();
+  var jobs=[fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},
+                                   body:JSON.stringify(body)}).then(function(r){return r.json()})];
+  if(v && SET && v!==SET.vault)
+    jobs.push(fetch('/api/vault',{method:'POST',headers:{'Content-Type':'application/json'},
+                                  body:JSON.stringify({path:v})}).then(function(r){return r.json()}));
+  Promise.all(jobs).then(function(rs){
+    var err=rs.filter(function(r){return r.error}).map(function(r){return r.error});
+    $('set-msg').textContent=err.length?err.join(' · '):'saved · re-checking…';
+    health(true).then(function(){ if(!err.length) $('set-msg').textContent='saved'; });
+  });
+});
+$('helpbtn').addEventListener('click',function(){$('help').classList.add('on')});
+$('help-close').addEventListener('click',function(){$('help').classList.remove('on')});
+$('help').addEventListener('click',function(e){if(e.target===$('help'))$('help').classList.remove('on')});
+document.querySelectorAll('.tabs button').forEach(function(b){
+  b.addEventListener('click',function(){
+    document.querySelectorAll('.tabs button').forEach(function(x){x.classList.remove('on')});
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on')});
+    b.classList.add('on'); $(b.getAttribute('data-tab')).classList.add('on');
+  });
+});
 $('q').addEventListener('keydown',function(e){if(e.key==='Enter')load($('q').value.trim())});
 setInterval(function(){$('clock').textContent=new Date().toLocaleTimeString()},1000);
 fetch('/api/vitals').then(function(r){return r.json()}).then(function(d){
@@ -395,4 +657,10 @@ fetch('/api/vitals').then(function(r){return r.json()}).then(function(d){
   $('s-notes').textContent=fmt(d.notes);$('s-ents').textContent=fmt(d.entities);
   $('s-ment').textContent=fmt(d.mentions);$('s-edges').textContent=fmt(d.drawable_edges);});
 size(); projects(); load(''); tick();
+health(false); setInterval(function(){health(false)},60000);
+if(location.hash==='#setup') openSetup();      // linkable, so support can say "open /#setup"
+if(location.hash==='#help') $('help').classList.add('on');
+/* nothing in the corpus means nothing to explain away: open the door instead */
+fetch('/api/vitals').then(function(r){return r.json()}).then(function(d){
+  if(!d.notes) $('help').classList.add('on'); });
 </script></body></html>

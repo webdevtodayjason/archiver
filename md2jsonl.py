@@ -28,6 +28,9 @@ def clean(text):
     text = re.sub(r"\[\[([^\]|]+)\|([^\]]+)\]\]", r"\2", text)
     text = re.sub(r"\[\[([^\]]+)\]\]", r"\1", text)
     text = re.sub(r"^```.*?^```", "", text, flags=re.S | re.M)  # code fences
+    # Inline code too: `DocumentEvent` and `GeneratedDocument` are identifiers,
+    # and left in they read as capitalised names and become entities.
+    text = re.sub(r"`[^`\n]{1,80}`", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 

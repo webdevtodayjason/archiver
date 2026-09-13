@@ -1,0 +1,313 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BRAIN</title>
+<style>
+:root{
+  --ground:#050706; --panel:#0a0f0c; --line:#14251b; --line2:#1e3a29;
+  --dim:#3f6b52; --steel:#5f9e7a; --ink:#b9f2d0; --hot:#4ade80; --white:#eafff2;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"DejaVu Sans Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font:12.5px/1.5 var(--mono);
+  -webkit-font-smoothing:antialiased;overflow:hidden}
+.wrap{display:grid;grid-template-rows:auto auto 1fr auto;height:100vh}
+header{display:flex;align-items:center;gap:13px;padding:10px 15px;border-bottom:1px solid var(--line)}
+header .t{font-size:13px;letter-spacing:.22em;color:var(--white)}
+.badge{border:1px solid var(--line2);color:var(--hot);border-radius:11px;padding:1px 9px;
+  font-size:10px;letter-spacing:.15em}
+.badge.live{animation:pulse 2.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+header .sp{flex:1}
+input,textarea{background:var(--panel);border:1px solid var(--line2);color:var(--ink);
+  font:inherit;padding:5px 9px;border-radius:4px}
+input:focus,textarea:focus{outline:none;border-color:var(--hot)}
+.strip{display:flex;gap:17px;padding:5px 15px;border-bottom:1px solid var(--line);
+  font-size:10.5px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase}
+.strip b{color:var(--steel);font-weight:400}
+main{display:grid;grid-template-columns:238px minmax(0,1fr) 340px;min-height:0}
+aside{border-right:1px solid var(--line);overflow:auto;min-height:0;padding:12px}
+aside.r{border-right:0;border-left:1px solid var(--line)}
+h3{margin:0 0 8px;font-size:10px;letter-spacing:.16em;color:var(--dim);
+  text-transform:uppercase;font-weight:400}
+.sec{margin-top:17px}
+.kv{display:flex;justify-content:space-between;gap:9px;padding:2px 0}
+.kv b{color:var(--white);font-weight:500}
+.row{display:flex;justify-content:space-between;gap:9px;padding:4px 6px;cursor:pointer;
+  border-radius:3px;border:1px solid transparent}
+.row:hover{background:var(--panel);border-color:var(--line2)}
+.row.on{background:#0d1a12;border-color:var(--hot);color:var(--white)}
+.row .n{color:var(--dim);font-size:11px}
+.cwrap{position:relative;min-height:0}
+canvas{display:block;width:100%;height:100%;cursor:grab}
+canvas:active{cursor:grabbing}
+.cap{position:absolute;left:13px;top:11px;font-size:10px;letter-spacing:.14em;
+  color:var(--dim);text-transform:uppercase;pointer-events:none}
+.cnt{position:absolute;right:13px;bottom:11px;font-size:10.5px;color:var(--dim);pointer-events:none}
+.item{border-top:1px solid var(--line);padding:6px 0;cursor:pointer}
+.item:hover .n{color:var(--hot)}
+.item .n{color:var(--steel)}
+.item .m{color:var(--dim);font-size:11px}
+.pair{display:flex;gap:6px;padding:4px 0;border-top:1px solid var(--line);cursor:pointer}
+.pair:hover span{color:var(--hot)}
+.pair .a{color:var(--steel)}.pair .w{margin-left:auto;color:var(--dim);font-size:10.5px}
+.empty{color:var(--dim);padding:8px 0}
+.ask{display:flex;gap:6px;margin-top:7px}
+.ask input{flex:1}
+button{background:var(--panel);border:1px solid var(--line2);color:var(--steel);font:inherit;
+  padding:5px 11px;border-radius:4px;cursor:pointer}
+button:hover{border-color:var(--hot);color:var(--hot)}
+.ans{margin-top:9px;padding:9px 10px;background:var(--panel);border:1px solid var(--line);
+  border-radius:5px;font-size:12px;line-height:1.62;white-space:pre-wrap}
+footer{display:flex;gap:18px;padding:6px 15px;border-top:1px solid var(--line);
+  font-size:10.5px;color:var(--dim)}
+footer b{color:var(--steel);font-weight:400}
+#reader{position:fixed;inset:0;background:#040605ee;backdrop-filter:blur(3px);display:none;
+  place-items:center;z-index:40;padding:30px}
+#reader.on{display:grid}
+#reader .box{background:var(--panel);border:1px solid var(--line2);border-radius:8px;
+  max-width:860px;width:100%;max-height:84vh;display:grid;grid-template-rows:auto 1fr}
+#reader .hd{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:baseline}
+#reader .hd .t{color:var(--white)}
+#reader .bd{padding:14px 17px;overflow:auto;white-space:pre-wrap;line-height:1.66;color:var(--ink)}
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
+</style></head><body>
+<div class="wrap">
+  <header>
+    <span class="t">BRAIN</span>
+    <span class="badge live" id="state">SETTLING</span>
+    <span class="sp"></span>
+    <input id="q" placeholder="focus an entity…" autocomplete="off" style="width:210px">
+    <span class="badge" id="clock">—</span>
+  </header>
+  <div class="strip">
+    <span><b id="s-notes">—</b> notes</span><span><b id="s-ents">—</b> entities</span>
+    <span><b id="s-ment">—</b> mentions</span><span><b id="s-edges">—</b> links</span>
+    <span id="s-focus"></span>
+  </div>
+  <main>
+    <aside>
+      <h3>Projects <span style="color:var(--dim)" id="nproj"></span></h3>
+      <div id="projects"></div>
+      <div class="sec"><h3>Vitals</h3>
+        <div class="kv"><span>notes</span><b id="v-notes">—</b></div>
+        <div class="kv"><span>chunks</span><b id="v-chunks">—</b></div>
+        <div class="kv"><span>vectors</span><b id="v-vec">—</b></div>
+        <div class="kv"><span>entities</span><b id="v-ents">—</b></div>
+        <div class="kv"><span>links kept</span><b id="v-dedge">—</b></div>
+      </div>
+    </aside>
+    <div class="cwrap">
+      <div class="cap" id="cap">corpus-linked relations</div>
+      <canvas id="c"></canvas>
+      <div class="cnt" id="cnt"></div>
+    </div>
+    <aside class="r">
+      <h3>Inspector</h3>
+      <div id="insp" class="empty">hover to inspect · click to focus</div>
+      <div class="sec" id="asksec" style="display:none">
+        <h3>Ask about <span id="askwhat" style="color:var(--steel)"></span></h3>
+        <div class="ask"><input id="askq" placeholder="what did we decide?"><button id="askgo">Ask</button></div>
+        <div id="ans"></div>
+      </div>
+    </aside>
+  </main>
+  <footer>
+    <span><b>hover</b> inspect</span><span><b>click</b> focus &amp; rebuild</span>
+    <span><b>esc</b> release</span><span><b>drag</b> pan</span><span><b>scroll</b> zoom</span>
+  </footer>
+</div>
+<div id="reader"><div class="box">
+  <div class="hd"><span class="t" id="r-title"></span><span style="color:var(--dim)" id="r-src"></span>
+    <span style="margin-left:auto"><button id="r-close">close</button></span></div>
+  <div class="bd" id="r-body"></div>
+</div></div>
+<script>
+var $=function(i){return document.getElementById(i)};
+var fmt=function(n){return n==null?'—':n.toLocaleString()};
+var esc=function(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML};
+var cv=$('c'), ctx=cv.getContext('2d'), DPR=window.devicePixelRatio||1;
+var NODES=[], EDGES=[], POS={}, focus='', hover=null, alpha=1, view={x:0,y:0,k:1}, drag=null;
+
+function size(){var r=cv.parentNode.getBoundingClientRect();
+  cv.width=r.width*DPR;cv.height=r.height*DPR;cv.style.width=r.width+'px';cv.style.height=r.height+'px';}
+window.addEventListener('resize',size);
+
+/* ---- the simulation runs forever, it does not compute once and stop ---- */
+function tick(){
+  var W=cv.width/DPR, H=cv.height/DPR, cx=W/2, cy=H/2;
+  if(alpha>0.002){
+    var n=NODES.length;
+    for(var i=0;i<n;i++){var a=NODES[i];
+      for(var j=i+1;j<n;j++){var b=NODES[j];
+        var dx=b.x-a.x,dy=b.y-a.y,d2=dx*dx+dy*dy+0.02;
+        if(d2>140000) continue;
+        var f=(a.focus||b.focus?1500:1000)/d2;
+        a.vx-=dx*f;a.vy-=dy*f;b.vx+=dx*f;b.vy+=dy*f;}}
+    EDGES.forEach(function(e){ if(!e.s||!e.t) return;
+      var dx=e.t.x-e.s.x,dy=e.t.y-e.s.y,d=Math.sqrt(dx*dx+dy*dy)||1;
+      // a focused node holds its neighbours close, so its cluster reads as one thing
+      var rest=(e.s.focus||e.t.focus)?52:82;
+      var f=(d-rest)*0.014*Math.min(1,e.w/4);
+      e.s.vx+=dx/d*f;e.s.vy+=dy/d*f;e.t.vx-=dx/d*f;e.t.vy-=dy/d*f;});
+    NODES.forEach(function(d){
+      if(d.focus){ d.vx+=(cx-d.x)*0.075; d.vy+=(cy-d.y)*0.075; }   // pulled to centre
+      else { d.vx+=(cx-d.x)*0.0012; d.vy+=(cy-d.y)*0.0012; }
+      d.x+=d.vx*alpha; d.y+=d.vy*alpha; d.vx*=0.87; d.vy*=0.87;
+      POS[d.id]=[d.x,d.y];});
+    alpha*=0.994;
+    $('state').textContent = alpha>0.25?'SETTLING':(focus?'FOCUSED':'READY');
+  }
+  draw(); requestAnimationFrame(tick);
+}
+function rad(d){return 2.4+Math.min(9,Math.sqrt(d.docs||1)*1.05)}
+function draw(){
+  ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.setTransform(DPR*view.k,0,0,DPR*view.k,view.x*DPR,view.y*DPR);
+  var sel=NODES.filter(function(d){return d.focus})[0]||hover;
+  var lit={}; if(sel){ lit[sel.id]=1;
+    EDGES.forEach(function(e){ if(e.s===sel)lit[e.t.id]=1; if(e.t===sel)lit[e.s.id]=1; }); }
+  ctx.lineWidth=0.65;
+  EDGES.forEach(function(e){ if(!e.s||!e.t) return;
+    var on = sel && (lit[e.s.id]&&lit[e.t.id]);
+    ctx.strokeStyle = on? 'rgba(74,222,128,.5)' : (sel? 'rgba(24,45,32,.5)':'rgba(31,58,41,.55)');
+    ctx.beginPath();ctx.moveTo(e.s.x,e.s.y);ctx.lineTo(e.t.x,e.t.y);ctx.stroke();});
+  NODES.forEach(function(d){
+    var r=rad(d), isF=!!d.focus, near=sel&&!isF&&lit[d.id];
+    if(isF){ var g=ctx.createRadialGradient(d.x,d.y,r,d.x,d.y,r+26);
+      g.addColorStop(0,'rgba(74,222,128,.30)'); g.addColorStop(1,'rgba(74,222,128,0)');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(d.x,d.y,r+26,0,6.2832); ctx.fill(); }
+    ctx.beginPath();ctx.arc(d.x,d.y,r,0,6.2832);
+    ctx.fillStyle = isF?'#8ef7b4' : near?'#4ade80'
+      : (sel? 'rgba(45,80,60,.85)'
+        : (d.inshelf? 'rgba(110,190,140,.95)'
+          : (d.docs>=12?'rgba(95,158,122,.9)':'rgba(63,107,82,.8)')));
+    ctx.fill();
+    if(d.docs>=14||isF||near||d===hover){
+      ctx.font=(isF?'bold ':'')+'10px ui-monospace,Menlo,monospace';
+      ctx.fillStyle=isF?'#eafff2':(near?'rgba(185,242,208,.95)':'rgba(95,158,122,.75)');
+      ctx.fillText(d.name,d.x+r+4,d.y+3);}});
+}
+function at(mx,my){var x=(mx-view.x)/view.k,y=(my-view.y)/view.k,best=null,bd=1e9;
+  NODES.forEach(function(d){var dx=d.x-x,dy=d.y-y,dd=dx*dx+dy*dy;
+    if(dd<bd&&dd<Math.pow(rad(d)+8,2)){bd=dd;best=d;}});return best;}
+cv.addEventListener('mousemove',function(e){var r=cv.getBoundingClientRect();
+  if(drag){view.x+=e.clientX-drag.x;view.y+=e.clientY-drag.y;drag={x:e.clientX,y:e.clientY};return;}
+  var h=at(e.clientX-r.left,e.clientY-r.top);
+  if(h!==hover){hover=h; if(h&&!h.focus) inspect(h.name);}});
+cv.addEventListener('mousedown',function(e){drag={x:e.clientX,y:e.clientY}});
+window.addEventListener('mouseup',function(){drag=null});
+cv.addEventListener('click',function(e){var r=cv.getBoundingClientRect();
+  var h=at(e.clientX-r.left,e.clientY-r.top); if(h) load(h.name);});
+cv.addEventListener('wheel',function(e){e.preventDefault();
+  view.k=Math.max(.25,Math.min(4,view.k*(e.deltaY<0?1.12:.89)));},{passive:false});
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){ if($('reader').classList.contains('on')) $('reader').classList.remove('on');
+    else load(''); }});
+
+function inspect(name){
+  fetch('/api/entity?name='+encodeURIComponent(name)).then(function(r){return r.json()}).then(function(d){
+    if(d.error) return;
+    $('insp').innerHTML='<div style="color:var(--white)">'+esc(d.name)+'</div>'
+      +'<div class="m" style="color:var(--dim)">named in '+fmt(d.docs)+' notes · '+fmt(d.mentions)+' times</div>'
+      +'<div class="sec"><h3>Sits with</h3>'
+      +(d.near||[]).slice(0,8).map(function(x){return '<div class="pair" data-go="'+esc(x.name)+'">'
+        +'<span class="a">'+esc(x.name)+'</span><span class="w">'+x.n+'</span></div>';}).join('')
+      +'</div><div class="sec"><h3>Read the notes</h3>'
+      +(d.notes||[]).slice(0,12).map(function(x){return '<div class="item" data-note="'+esc(x.id)+'">'
+        +'<div class="n">'+esc(x.title)+'</div><div class="m">'+esc(x.source)+'</div></div>';}).join('')
+      +'</div>';
+    $('asksec').style.display='block'; $('askwhat').textContent=d.name;
+  });
+}
+function load(f,shelf){
+  focus=f;
+  fetch('/api/graph?limit=200&shelf='+encodeURIComponent(shelf||'')
+        +'&focus='+encodeURIComponent(f)).then(function(r){return r.json()})
+   .then(function(d){
+    var W=cv.width/DPR||900, H=cv.height/DPR||600;
+    NODES=d.nodes.map(function(n,i){
+      var p=POS[n.id];                        // keep what is already on screen where it is,
+      var a=i/d.nodes.length*6.2832;          // so the graph reorganises instead of jumping
+      return Object.assign({},n,{x:p?p[0]:W/2+Math.cos(a)*240, y:p?p[1]:H/2+Math.sin(a)*240,
+        vx:0,vy:0,inshelf:n.inshelf||0,
+        focus:(f&&n.name.toLowerCase()===f.toLowerCase())?1:0});});
+    var by={}; NODES.forEach(function(n){by[n.id]=n});
+    EDGES=d.edges.map(function(e){return{s:by[e.a],t:by[e.b],w:e.w,n:e.n}})
+                 .filter(function(e){return e.s&&e.t});
+    alpha=1;                                   // reheat: this is the reorganising
+    $('cnt').textContent=fmt(d.nodes.length)+' of '+fmt(d.total_entities)+' entities · '
+      +fmt(d.edges.length)+' of '+fmt(d.total_edges)+' links';
+    $('cap').textContent = shelf? ('constellation · '+shelf)
+                          : (f? ('nebula · '+f) : 'corpus-linked relations');
+    $('s-focus').textContent = shelf? ('project: '+shelf) : (f?('focus: '+f):'');
+    if(f) inspect(f);
+    else if(!shelf){ $('asksec').style.display='none';
+      $('insp').innerHTML='<div class="empty">hover to inspect · click to focus</div>'; }
+  });
+}
+function projects(){
+  fetch('/api/shelves').then(function(r){return r.json()}).then(function(rows){
+    $('nproj').textContent='('+rows.length+')';
+    $('projects').innerHTML=rows.map(function(s){
+      return '<div class="row" data-shelf="'+esc(s.name)+'"><span>'+esc(s.name)+'</span>'
+            +'<span class="n">'+s.notes+' notes</span></div>';}).join('');
+  });
+}
+function openShelf(name){
+  POS={};                       // a project is a different map, so lay it out fresh
+  load('', name);
+  fetch('/api/shelf?name='+encodeURIComponent(name)).then(function(r){return r.json()}).then(function(d){
+    document.querySelectorAll('.row').forEach(function(el){
+      el.classList.toggle('on', el.getAttribute('data-shelf')===name);});
+    $('insp').innerHTML='<div style="color:var(--white)">'+esc(d.name)+'</div>'
+      +'<div class="m" style="color:var(--dim)">'+d.notes.length+' notes in this project</div>'
+      +'<div class="sec"><h3>What it is about</h3>'
+      +(d.entities||[]).slice(0,10).map(function(x){return '<div class="pair" data-go="'+esc(x.name)+'">'
+        +'<span class="a">'+esc(x.name)+'</span><span class="w">'+x.n+'</span></div>';}).join('')
+      +'</div><div class="sec"><h3>Notes</h3>'
+      +(d.notes||[]).map(function(x){return '<div class="item" data-note="'+esc(x.id)+'">'
+        +'<div class="n">'+esc(x.title)+'</div></div>';}).join('')
+      +'</div>';
+    $('asksec').style.display='block'; $('askwhat').textContent=d.name;
+  });
+}
+function openNote(id){
+  fetch('/api/note?id='+encodeURIComponent(id)).then(function(r){return r.json()}).then(function(d){
+    if(d.error) return;
+    $('r-title').textContent=d.title; $('r-src').textContent=d.path||d.source;
+    $('r-body').textContent=d.text||'(empty)'; $('reader').classList.add('on');
+  });
+}
+$('r-close').addEventListener('click',function(){$('reader').classList.remove('on')});
+$('reader').addEventListener('click',function(e){if(e.target===$('reader'))$('reader').classList.remove('on')});
+document.addEventListener('click',function(e){
+  var p=e.target.closest('[data-go]'); if(p){ load(p.getAttribute('data-go')); return; }
+  var s=e.target.closest('[data-shelf]'); if(s){ openShelf(s.getAttribute('data-shelf')); return; }
+  var n=e.target.closest('[data-note]'); if(n){ openNote(n.getAttribute('data-note')); }
+});
+function doAsk(){
+  var q=$('askq').value.trim(); if(!q) return;
+  $('ans').innerHTML='<div class="ans" style="color:var(--dim)">thinking…</div>';
+  fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({q:q,focus:$('askwhat').textContent})})
+   .then(function(r){return r.json()}).then(function(d){
+    if(d.error){$('ans').innerHTML='<div class="ans">'+esc(d.error)+'</div>';return;}
+    $('ans').innerHTML='<div class="ans">'+esc(d.answer)+'</div>'
+      +(d.sources||[]).slice(0,5).map(function(s){
+        return '<div class="m" style="color:var(--dim);margin-top:4px">'+esc(s)+'</div>';}).join('');
+  });
+}
+$('askgo').addEventListener('click',doAsk);
+$('askq').addEventListener('keydown',function(e){if(e.key==='Enter')doAsk()});
+$('q').addEventListener('keydown',function(e){if(e.key==='Enter')load($('q').value.trim())});
+setInterval(function(){$('clock').textContent=new Date().toLocaleTimeString()},1000);
+fetch('/api/vitals').then(function(r){return r.json()}).then(function(d){
+  $('v-notes').textContent=fmt(d.notes);$('v-chunks').textContent=fmt(d.chunks);
+  $('v-vec').textContent=fmt(d.vectors);$('v-ents').textContent=fmt(d.entities);
+  $('v-dedge').textContent=fmt(d.drawable_edges);
+  $('s-notes').textContent=fmt(d.notes);$('s-ents').textContent=fmt(d.entities);
+  $('s-ment').textContent=fmt(d.mentions);$('s-edges').textContent=fmt(d.drawable_edges);});
+size(); projects(); load(''); tick();
+</script></body></html>

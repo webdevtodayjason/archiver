@@ -44,8 +44,38 @@ yes ok okay also still even much many well back down out up off here
 readme overview summary status update updates changelog architecture
 """.split())
 
+# Generic technical vocabulary. These capitalise like names because they are
+# acronyms, and they are everywhere, so no statistic separates them from a real
+# product name - "API" sits in 590 notes and "ArgentOS" in 492. A list is the
+# honest tool here: it is small, it is obvious, and a classifier for it would be
+# a worse version of writing it down.
+TECH = set("""
+api cli url uri json html css sql sdk ui ux id ide cpu gpu ram ssd nvme ssh dns
+tls ssl jwt cors crud rest rpc grpc http https yaml toml csv tsv pdf png jpg svg
+gif mp3 mp4 wav get post put patch delete head options ok todo fixme note warning
+error info debug trace readme license mit utc am pm env var dir src bin tmp log
+logs npm pip git repo repos pr prs ci cd vm vms os io db sqlite postgres redis
+gateway phase see status state config settings setup install usage example
+examples docs doc test tests build deploy release version versions changelog
+lessons learned overview summary architecture roadmap glossary
+""".split())
+
 # Shapes that are never a person or a project: file paths, code, versions, IDs.
 JUNK = re.compile(r"^(?:[A-Z]{1,3}\d|v?\d|.*[/\\_@#].*|.*\d{3,}.*)$")
+
+# "Evalchemy-style", "Cloudflare DNS-only", "GUI-launched LoRA". These describe a
+# thing rather than name one, and they arrive as capitalised runs like any name.
+ADJECTIVAL = re.compile(
+    r"-(?:style|only|based|driven|aware|safe|ready|first|native|backed|"
+    r"launched|facing|side|level|wide|less|like|ish|free|proof)\b", re.I)
+
+# Words that lead a sentence into a name: "What HoLaCe does", "The Titanium Lab".
+# Strip them rather than dropping the run, or "What HoLaCe" becomes an entity in
+# its own right and splits HoLaCe's mentions across two rows.
+LEAD = {"what", "the", "a", "an", "this", "that", "these", "those", "our", "my",
+        "your", "his", "her", "its", "their", "all", "some", "any", "each",
+        "every", "both", "no", "new", "old", "next", "last", "first", "other",
+        "same", "see", "note", "why", "how", "when", "where", "which", "who"}
 
 # A capitalised run: "Richard", "Richard Avery", "Forward Observer".
 RUN = re.compile(r"\b([A-Z][a-zA-Z'’-]{1,20}(?:\s+[A-Z][a-zA-Z'’-]{1,20}){0,2})\b")
@@ -73,13 +103,45 @@ def _schema(c):
     c.commit()
 
 
+HEADING = re.compile(r"^\s{0,3}#{1,6}\s", re.M)
+
+
+def _heading_spans(text):
+    """Character ranges covered by markdown headings."""
+    spans = []
+    for m in HEADING.finditer(text):
+        end = text.find("\n", m.end())
+        spans.append((m.start(), end if end != -1 else len(text)))
+    return spans
+
+
 def candidates(text):
-    """Capitalised runs that look like names, from one chunk."""
-    out = set()
+    """Capitalised runs that look like names, and whether each sat in a heading.
+
+    Returns {name: in_heading_count}. Section headings capitalise exactly like
+    proper nouns, and they are frequent, so neither casing nor document
+    frequency separates "Known Gotchas" from "ArgentOS" - one is in 435 notes
+    and the other in 492. Where the name sits does separate them: a heading is
+    written with a hash in front of it, and a product name is written in a
+    sentence.
+    """
+    spans = _heading_spans(text)
+    def in_heading(i):
+        return any(a <= i < b for a, b in spans)
+    out = {}
     for m in RUN.finditer(text):
         name = " ".join(m.group(1).split())
+        # "Richard's" and "Richard" are the same person; keeping both splits a
+        # hundred mentions across two rows and halves everything downstream.
+        name = re.sub(r"[\u2019']s$", "", name)
+        parts = name.split()
+        while len(parts) > 1 and parts[0].lower() in LEAD:
+            parts.pop(0)
+        name = " ".join(parts)
         low = name.lower()
-        if low in STOP or JUNK.match(name):
+        if not name or low in STOP or JUNK.match(name) or ADJECTIVAL.search(name):
+            continue
+        if low in TECH or all(w.lower() in TECH for w in name.split()):
             continue
         # A single word that is only capitalised because it starts a sentence is
         # noise. Require either two words, or a word seen mid-sentence.
@@ -92,7 +154,8 @@ def candidates(text):
                 continue
         if all(w.lower() in STOP for w in name.split()):
             continue
-        out.add(name)
+        prev = out.get(name, 0)
+        out[name] = prev + (1 if in_heading(m.start()) else 0)
     return out
 
 
@@ -105,13 +168,38 @@ def build(min_docs=3):
     rows = c.execute("SELECT id, doc_id, text FROM chunk").fetchall()
     print(f"  scanning {len(rows):,} chunks")
     hits = collections.defaultdict(list)          # name -> [(doc_id, chunk_id)]
+    heads = collections.Counter()
+    seen = collections.Counter()
     for r in rows:
-        for name in candidates(r["text"]):
+        for name, h in candidates(r["text"]).items():
             hits[name].append((r["doc_id"], r["id"]))
+            seen[name] += 1
+            heads[name] += 1 if h else 0
     kept = 0
+    # A name that titles notes in many unrelated projects is a section of the
+    # author's own note template, not a subject. "Known Gotchas" titles 49 notes
+    # across 49 projects; ArgentOS titles 7 and is a real thing. Frequency in the
+    # body cannot tell these apart - both are everywhere - but this can.
+    template = set()
+    for r in c.execute(
+            "SELECT title, COUNT(DISTINCT source) srcs, COUNT(*) n FROM doc "
+            "GROUP BY title HAVING srcs >= 5 AND n >= 8").fetchall():
+        t = re.sub(r"^\s*\d+\s*[-–—.]\s*", "", r["title"]).strip()
+        if t:
+            template.add(t.lower())
+    dropped_template = 0
+    dropped_headings = 0
     for name, ms in hits.items():
         docs = len({d for d, _ in ms})
         if docs < min_docs:
+            continue
+        # Mostly seen under a hash: it is a section of a document, not a thing
+        # the documents are about.
+        if name.lower() in template:
+            dropped_template += 1
+            continue
+        if seen[name] >= 4 and heads[name] / seen[name] > 0.6:
+            dropped_headings += 1
             continue
         cur = c.execute(
             "INSERT INTO entity(name,kind,mentions,docs) VALUES(?,?,?,?)",
@@ -121,7 +209,9 @@ def build(min_docs=3):
                       [(eid, d, ch) for d, ch in ms])
         kept += 1
     c.commit()
-    print(f"  {len(hits):,} candidates, {kept:,} kept (named in {min_docs}+ notes)")
+    print(f"  {len(hits):,} candidates, {kept:,} kept (named in {min_docs}+ notes), "
+          f"{dropped_template:,} dropped as note-template sections, "
+          f"{dropped_headings:,} as headings")
     return 0
 
 

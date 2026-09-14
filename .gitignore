@@ -6,3 +6,7 @@ __pycache__/
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
 .live/
+
+# Agent worktrees are transient workspaces, not content. git add -A picks them
+# up as embedded repos and commits a gitlink that no clone can resolve.
+.claude/worktrees/

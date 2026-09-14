@@ -38,6 +38,7 @@ STATIC = HERE / "static"
 
 DF_CEILING = 0.12     # named in more than this share of notes -> boilerplate
 MIN_SHARED = 3        # notes two entities must share before it is an edge
+MIN_SHARED_CHUNKS = 8  # ...chunks, when the unit is a chunk. See _shape().
 TOP_EDGES = 6         # strongest edges kept per entity
 
 
@@ -47,30 +48,81 @@ def _db():
     return c
 
 
+def _shape(c):
+    """What kind of archive this is, measured off the corpus rather than configured.
+
+    Two of the reduction's assumptions are properties of a note vault rather
+    than of archives in general. They are asked separately, because a corpus can
+    be one and not the other.
+
+    Co-occurrence needs a unit of roughly constant size that is about one thing.
+    In a vault that unit is the note, so two names in one note means something.
+    A 676-page survival manual is not about one thing: at document scale every
+    term in it co-occurs with every other, and on the LAST LIGHT corpus that
+    made "urethral - thrombosis" a maximum-PMI edge, because three medical
+    manuals each contain both words somewhere in five hundred pages. Every edge
+    in that graph sat on the MIN_SHARED floor and the ten highest-degree names
+    were each in three documents. Chunks are the note-sized unit a library
+    already has, so when most of the corpus's pages sit inside multi-page
+    documents, co-occur over chunks instead.
+
+    Which population to draw is the second question. entities.py maintains two
+    in one table, built by different extractors: capitalised names (kind NULL)
+    and lowercase subjects (kind 'subject'). Their base rates are nothing alike
+    - on LAST LIGHT a subject averages 143 mentions and a name 15 - so a PMI
+    taken across both is comparing two different measurements, and the larger
+    population wins on volume rather than on meaning. Draw one. Running
+    `entities.py subjects` over a corpus is a statement that its proper nouns
+    were not the answer, so where that index exists it is the one to draw.
+    """
+    p = c.execute("SELECT COALESCE(SUM(pages),0) all_p, "
+                  "COALESCE(SUM(CASE WHEN pages>1 THEN pages END),0) book_p "
+                  "FROM doc").fetchone()
+    unit = "chunk_id" if p["all_p"] and p["book_p"] * 2 > p["all_p"] else "doc_id"
+    subj = c.execute(
+        "SELECT COUNT(*) n FROM entity WHERE kind='subject'").fetchone()["n"] > 0
+    return unit, subj
+
+
 def _graph(c):
     """(nodes, edges) after the three cuts. Cached per process - it is a scan."""
     if getattr(_graph, "_cache", None):
         return _graph._cache
-    n_docs = c.execute("SELECT COUNT(*) FROM doc").fetchone()["c"] \
-        if False else c.execute("SELECT COUNT(*) n FROM doc").fetchone()["n"]
+    n_docs = c.execute("SELECT COUNT(*) n FROM doc").fetchone()["n"]
+    unit, subj = _shape(c)
+    n_units = n_docs if unit == "doc_id" else \
+        c.execute("SELECT COUNT(*) n FROM chunk").fetchone()["n"]
     ceiling = max(3, int(n_docs * DF_CEILING))
     ents = {r["id"]: {"id": r["id"], "name": r["name"], "docs": r["docs"],
                       "mentions": r["mentions"]}
-            for r in c.execute("SELECT id,name,docs,mentions FROM entity")
-            if r["docs"] <= ceiling}
+            for r in c.execute("SELECT id,name,docs,mentions,kind FROM entity")
+            if r["docs"] <= ceiling and (r["kind"] == "subject") == subj}
+    # PMI wants each entity's frequency in the unit being counted, and
+    # entity.docs is documents whichever unit that is. The two agree row for row
+    # when the unit is the document, so this costs the vault nothing.
+    freq = {r["e"]: r["n"] for r in c.execute(
+        f"SELECT entity_id e, COUNT(DISTINCT {unit}) n FROM mention "
+        "GROUP BY entity_id")}
+    # DISTINCT before the join, not COUNT(DISTINCT) after it. mention carries a
+    # row per chunk, so a corpus whose largest document holds 19,750 of them
+    # feeds the self-join 1.9 billion rows to produce the same 1.5 million
+    # answers: 834 seconds against 3 on an M5 Max. COUNT(DISTINCT a.doc_id) was
+    # already collapsing those duplicates, it was just paying for them first,
+    # which is why the result is unchanged and only the bill moved.
     raw = c.execute(
-        "SELECT a.entity_id x, b.entity_id y, COUNT(DISTINCT a.doc_id) n "
-        "FROM mention a JOIN mention b "
-        "ON a.doc_id=b.doc_id AND a.entity_id<b.entity_id "
-        "GROUP BY a.entity_id,b.entity_id HAVING n>=?", (MIN_SHARED,)).fetchall()
+        f"WITH m AS (SELECT DISTINCT entity_id, {unit} u FROM mention) "
+        "SELECT a.entity_id x, b.entity_id y, COUNT(*) n "
+        "FROM m a JOIN m b ON a.u=b.u AND a.entity_id<b.entity_id "
+        "GROUP BY a.entity_id,b.entity_id HAVING n>=?",
+        (MIN_SHARED if unit == "doc_id" else MIN_SHARED_CHUNKS,)).fetchall()
     scored = []
     for r in raw:
         x, y = r["x"], r["y"]
         if x not in ents or y not in ents:
             continue
-        px = ents[x]["docs"] / n_docs
-        py = ents[y]["docs"] / n_docs
-        pxy = r["n"] / n_docs
+        px = freq.get(x, 0) / n_units
+        py = freq.get(y, 0) / n_units
+        pxy = r["n"] / n_units
         if px <= 0 or py <= 0:
             continue
         s = math.log(pxy / (px * py))
@@ -267,6 +319,10 @@ def vitals(c):
         "shelves": [dict(r) for r in c.execute(
             "SELECT source AS name, COUNT(*) n FROM doc GROUP BY source "
             "ORDER BY n DESC LIMIT 8")],
+        # The page calls a document a note, a shelf a project and offers to
+        # write one, all of which are true of a vault and none of a library of
+        # scanned books. One flag, decided the same way the graph decides.
+        "library": _shape(c)[0] == "chunk_id",
     }
 
 
@@ -301,25 +357,125 @@ def shelves(c):
         "FROM doc GROUP BY source ORDER BY notes DESC")]
 
 
-def shelf(c, name, limit=200):
+def shelf(c, name, limit=200, q=""):
+    """What is on one shelf, and honestly how much of it this is.
+
+    A vault shelf is a project of 90 notes and the list was the whole of it. The
+    Vikidia shelf is 5,934 articles, so the same LIMIT 200 silently showed 3% of
+    it in alphabetical order - everything from A to Ba. The count is returned so
+    the page can say so, and a filter is the only way to reach the rest.
+    """
+    where, args = "WHERE source=?", [name]
+    if q:
+        where += " AND title LIKE ? COLLATE NOCASE"
+        args.append(f"%{q}%")
+    total = c.execute(f"SELECT COUNT(*) n FROM doc {where}", args).fetchone()["n"]
+    # Longest first. Every note is one page, so this is title order in a vault,
+    # but on a shelf of books it puts the books above the one-page stubs.
     notes = [dict(r) for r in c.execute(
-        "SELECT id, title FROM doc WHERE source=? ORDER BY title LIMIT ?",
-        (name, limit))]
+        f"SELECT id, title, pages FROM doc {where} ORDER BY pages DESC, title "
+        "LIMIT ?", args + [limit])]
+    _, subj = _shape(c)
+    kind = "e.kind='subject'" if subj else "(e.kind IS NULL OR e.kind<>'subject')"
     top = [dict(r) for r in c.execute(
         "SELECT e.name, COUNT(DISTINCT m.doc_id) n FROM mention m "
         "JOIN entity e ON e.id=m.entity_id JOIN doc d ON d.id=m.doc_id "
-        "WHERE d.source=? GROUP BY e.id ORDER BY n DESC LIMIT 18", (name,))]
-    return {"name": name, "notes": notes, "entities": top}
+        f"WHERE d.source=? AND {kind} GROUP BY e.id ORDER BY n DESC LIMIT 18",
+        (name,))]
+    return {"name": name, "notes": notes, "entities": top,
+            "total": total, "shown": len(notes), "q": q}
 
 
-def note(c, doc_id):
-    d = c.execute("SELECT id,title,source,path FROM doc WHERE id=?", (doc_id,)).fetchone()
+def note(c, doc_id, first=1, budget=60000):
+    """A document's text from page `first`, about `budget` characters of it.
+
+    A note is one page and comes back whole. A book does not: Nuclear War
+    Survival Skills is 1,087,591 characters over 510 pages, and a flat
+    text[:60000] returned 5.5% of it with no page numbers and nothing saying it
+    had stopped. That is the failure this repo cares about most - it reads
+    exactly like the whole book. So pages are marked, whole pages are the unit,
+    and the caller is told which ones it is holding and whether there are more.
+    """
+    d = c.execute("SELECT id,title,source,path FROM doc WHERE id=?",
+                  (doc_id,)).fetchone()
     if not d:
         return {"error": "no such note"}
-    text = "\n\n".join(r["text"] or "" for r in c.execute(
-        "SELECT text FROM page WHERE doc_id=? ORDER BY page_no", (doc_id,)))
+    last = c.execute("SELECT COALESCE(MAX(page_no),1) n FROM page WHERE doc_id=?",
+                     (doc_id,)).fetchone()["n"]
+    out, used, to = [], 0, first - 1
+    for r in c.execute("SELECT page_no, text FROM page WHERE doc_id=? AND page_no>=? "
+                       "ORDER BY page_no", (doc_id, first)):
+        t = r["text"] or ""
+        head = f"[p{r['page_no']}]\n\n" if last > 1 else ""
+        if out and used + len(t) + len(head) > budget:
+            break
+        out.append(head + t)
+        used += len(t) + len(head)
+        to = r["page_no"]
     return {"id": d["id"], "title": d["title"], "source": d["source"],
-            "path": d["path"], "text": text[:60000]}
+            "path": d["path"],
+            # the slice still gets a hard cap, because one page can be longer
+            # than the budget and a vault note always was capped here
+            "text": "\n\n".join(out)[:budget],
+            "pages": last, "from": first, "to": max(to, first), "more": to < last}
+
+
+def _passages(c, doc_id, question, budget=24000):
+    """(text, whole) - what of one document to put in front of the model.
+
+    A note fits in a prompt entire and is sent entire. A 510-page book does not,
+    and the old text[:24000] answered questions about Nuclear War Survival
+    Skills out of its front matter while the system prompt swore the document
+    was reproduced below. That is this repo's worst failure mode: an answer
+    drawn from 5% of a book reads exactly like an answer drawn from the book.
+
+    So when it does not fit, the document's own chunks are ranked against the
+    question and the best of them are sent in page order, each headed by its
+    page. Lexical rather than vector: the field is already one document, the
+    device runs one inference at a time, and an embedding call to rank two
+    hundred chunks of one book is not worth its place in that queue.
+    """
+    rows = c.execute("SELECT text, page_from, page_to FROM chunk WHERE doc_id=? "
+                     "ORDER BY page_from, id", (doc_id,)).fetchall()
+    if not rows:
+        return "", True
+    if sum(len(r["text"]) for r in rows) <= budget:
+        return "\n\n".join(r["text"] for r in rows), True
+
+    import entities
+    terms = {w for w in re.findall(r"[a-z][a-z'-]{2,}", question.lower())
+             if w not in entities.STOP}
+    n = len(rows)
+    low = [r["text"].lower() for r in rows]
+    df = collections.Counter()
+    for t in terms:
+        df[t] = sum(1 for s in low if t in s)
+    scored = []
+    for i, s in enumerate(low):
+        # length-normalised, or a long chunk wins every question by holding
+        # more of every word
+        hit = sum(math.log(1 + n / (1 + df[t])) * s.count(t)
+                  for t in terms if df[t])
+        scored.append((hit / math.sqrt(len(s) + 1), i))
+    scored.sort(reverse=True)
+    take, used = [], 0
+    for s, i in scored:
+        if s <= 0:
+            break
+        if used + len(rows[i]["text"]) > budget:
+            continue
+        take.append(i)
+        used += len(rows[i]["text"])
+    if not take:                      # nothing matched: the opening is the honest default
+        take = list(range(min(n, 6)))
+    take.sort()
+    out = []
+    for i in take:
+        r = rows[i]
+        p = (f"[p{r['page_from']}]" if r["page_from"] == r["page_to"]
+             else f"[pp{r['page_from']}-{r['page_to']}]")
+        out.append(f"{p}\n{r['text']}")
+    return "\n\n[...]\n\n".join(out), False
 
 
 def ask_doc(c, doc_id, question):
@@ -330,20 +486,30 @@ def ask_doc(c, doc_id, question):
     archive, when what was asked was about this note. Hand over the note.
     """
     import archivist
-    d = note(c, doc_id)
-    if "error" in d:
-        return d
+    d = c.execute("SELECT id,title,source FROM doc WHERE id=?", (doc_id,)).fetchone()
+    if not d:
+        return {"error": "no such note"}
+    text, whole = _passages(c, doc_id, question)
     model, base, key = archivist.pick_chat()
+    # The prompt has to describe what it was actually given. A vault note is
+    # always whole, so that wording is left exactly as it was.
+    system = ("You are answering questions about one note from someone's own "
+              "notes, reproduced below. Answer from it and nothing else. If "
+              "the note does not say, say that it does not say - do not "
+              "reach for what you know about the subject generally.") if whole else \
+             ("You are answering questions about one document from an archive. "
+              "Below are the passages of it that match the question, each "
+              "headed by the page it is on; the rest of the document is not "
+              "shown. Answer from these passages and nothing else, and cite the "
+              "page. If they do not say, say that they do not say, and say that "
+              "the rest of the document was not searched - do not reach for "
+              "what you know about the subject generally.")
     body = {"model": model, "max_tokens": 700, "temperature": 0.2,
             "chat_template_kwargs": {"enable_thinking": False},
             "messages": [
-                {"role": "system", "content":
-                 "You are answering questions about one note from someone's own "
-                 "notes, reproduced below. Answer from it and nothing else. If "
-                 "the note does not say, say that it does not say - do not "
-                 "reach for what you know about the subject generally."},
+                {"role": "system", "content": system},
                 {"role": "user", "content":
-                 f"NOTE: {d['title']} ({d['source']})\n\n{d['text'][:24000]}\n\n"
+                 f"NOTE: {d['title']} ({d['source']})\n\n{text}\n\n"
                  f"QUESTION: {question}"}]}
     try:
         r = archivist.api("/v1/chat/completions", body, timeout=420,
@@ -607,9 +773,11 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/shelves":
             return self._json(shelves(c))
         if u.path == "/api/shelf":
-            return self._json(shelf(c, (q.get("name") or [""])[0]))
+            return self._json(shelf(c, (q.get("name") or [""])[0],
+                                    q=(q.get("q") or [""])[0].strip()))
         if u.path == "/api/note":
-            return self._json(note(c, int((q.get("id") or ["0"])[0])))
+            return self._json(note(c, int((q.get("id") or ["0"])[0]),
+                                   max(1, int((q.get("from") or ["1"])[0]))))
         if u.path == "/api/entity":
             return self._json(entity(c, (q.get("name") or [""])[0]))
         return self._send(404, "no such path", "text/plain")
@@ -711,12 +879,13 @@ def selfcheck():
     assert "Keelpin" in names and "Richard" in names, sorted(names)[:20]
     print(f"  entities: {len(names)} found, Keelpin and Richard among them")
 
+    assert _shape(c) == ("doc_id", False), _shape(c)
     d = window(archive.db(), "", 40)
     assert set(d) >= {"nodes", "edges", "total_entities", "total_edges"}, sorted(d)
     assert 0 <= d["total_entities"] <= len(names), (d["total_entities"], len(names))
     assert isinstance(d["nodes"], list) and isinstance(d["edges"], list)
     print(f"  graph: reduction ran over {d['total_entities']} entities, "
-          f"{d['total_edges']} co-occurrences")
+          f"{d['total_edges']} co-occurrences, over whole notes")
 
     # the routing rule is the thing most likely to rot silently
     print("  " + entities._routing_selftest())
@@ -725,8 +894,96 @@ def selfcheck():
 
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
+
+    print(_library_selfcheck())
     print("\n  selfcheck passed")
     return 0
+
+
+def _library_selfcheck():
+    """The same reduction over a corpus of books, which takes the other branch.
+
+    Everything above is a note vault, and a note vault exercises none of the
+    library path: one page per document, no subject index, so the shape test
+    picks whole documents and capitalised names exactly as it always did. This
+    builds forty eight-page documents and a subject index over them, which is
+    the smallest thing that is a library rather than a vault.
+    """
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="brain-selfcheck-lib-")
+    os.environ["ARCHIVER_HOME"] = tmp
+    import importlib
+    importlib.reload(archive)
+    import entities
+    importlib.reload(entities)
+    _graph._cache = None
+
+    filler = ("The chapter continues with general remarks about equipment and "
+              "weather and the ordinary business of being outdoors for a long "
+              "time without help arriving. ")
+    topics = [("deadfall", "trigger", "bait"), ("tinder", "kindling", "ember"),
+              ("tourniquet", "haemorrhage", "wound"), ("snare", "wire", "trail")]
+    c = archive.db()
+    for i in range(40):
+        cur = c.execute(
+            "INSERT INTO doc(path,title,source,pages,sha,added_at) "
+            "VALUES(?,?,?,?,?,?)",
+            (f"lib#{i}", f"Manual {i}", "selfcheck shelf", 8,
+             hashlib.sha1(str(i).encode()).hexdigest()[:16], archive.now()))
+        doc_id = cur.lastrowid
+        # each topic lands in exactly four documents, which is inside the
+        # document-frequency window subjects() keeps at this corpus size
+        t = topics[i % 4] if i < 16 else None
+        for p in range(1, 9):
+            body = filler * 4
+            if t and p <= 4:
+                body += (f"The {t[0]} is set with a {t[1]} and a {t[2]}. "
+                         f"A {t[0]} without a {t[1]} will not fall. ") * 6
+            c.execute("INSERT INTO page(doc_id,page_no,status,engine,conf,chars,"
+                      "text,done_at) VALUES(?,?,'text','selfcheck',1.0,?,?,?)",
+                      (doc_id, p, len(body), body, archive.now()))
+        c.commit()
+        archive.chunk_doc(c, doc_id)
+
+    entities.subjects(min_docs=3)
+    subs = {r["name"] for r in c.execute(
+        "SELECT name FROM entity WHERE kind='subject'")}
+    assert "deadfall" in subs and "tourniquet" in subs, sorted(subs)[:30]
+
+    shape = _shape(c)
+    assert shape == ("chunk_id", True), shape
+
+    ids = {r["id"] for r in c.execute(
+        "SELECT id FROM entity WHERE kind='subject'")}
+    ents, kept, _ = _graph(c)
+    assert ents and set(ents) <= ids, "the graph drew something that is not a subject"
+
+    d = window(archive.db(), "", 40)
+    assert isinstance(d["nodes"], list) and isinstance(d["edges"], list)
+
+    # a book is read a page at a time, and says so
+    doc_id = c.execute("SELECT id FROM doc LIMIT 1").fetchone()["id"]
+    n = note(c, doc_id, budget=2000)
+    assert n["pages"] == 8 and n["from"] == 1, (n["pages"], n["from"])
+    assert "[p1]" in n["text"], n["text"][:200]
+    assert n["more"] and n["to"] < 8, (n["to"], n["more"])
+    n2 = note(c, doc_id, first=n["to"] + 1, budget=2000)
+    assert n2["from"] == n["to"] + 1 and f"[p{n2['from']}]" in n2["text"], n2["from"]
+
+    # and a question about a book gets passages, not the first 24,000 characters
+    whole_text, whole = _passages(c, doc_id, "how is a deadfall triggered", 90000)
+    assert whole, "a document under budget should go over whole"
+    part, whole = _passages(c, doc_id, "how is a deadfall triggered", 1500)
+    assert not whole and "[p" in part, part[:200]
+    assert len(part) < len(whole_text), (len(part), len(whole_text))
+    assert "deadfall" in part, "the excerpt missed the term that was asked about"
+
+    shutil.rmtree(tmp, ignore_errors=True)
+    _graph._cache = None
+    return (f"  library: {len(subs)} subjects over 40 books, graph drew "
+            f"{len(ents)} of them across {len(kept)} links, chunk-scoped; "
+            f"reader paged and passages excerpted")
 
 
 if __name__ == "__main__":

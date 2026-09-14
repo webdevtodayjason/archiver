@@ -137,16 +137,16 @@ footer b{color:var(--steel);font-weight:400}
   <div class="banner" id="banner"><span id="bantext"></span>
     <button style="margin-left:auto" id="banfix">open setup</button></div>
   <div class="strip">
-    <span><b id="s-notes">—</b> notes</span><span><b id="s-ents">—</b> entities</span>
+    <span><b id="s-notes">—</b> <span id="s-notes-l">notes</span></span><span><b id="s-ents">—</b> entities</span>
     <span><b id="s-ment">—</b> mentions</span><span><b id="s-edges">—</b> links</span>
     <span id="s-focus"></span>
   </div>
   <main>
     <aside>
-      <h3>Projects <span style="color:var(--dim)" id="nproj"></span></h3>
+      <h3><span id="rail-l">Projects</span> <span style="color:var(--dim)" id="nproj"></span></h3>
       <div id="projects"></div>
       <div class="sec"><h3>Vitals</h3>
-        <div class="kv"><span>notes</span><b id="v-notes">—</b></div>
+        <div class="kv"><span id="v-notes-l">notes</span><b id="v-notes">—</b></div>
         <div class="kv"><span>chunks</span><b id="v-chunks">—</b></div>
         <div class="kv"><span>vectors</span><b id="v-vec">—</b></div>
         <div class="kv"><span>entities</span><b id="v-ents">—</b></div>
@@ -191,6 +191,8 @@ footer b{color:var(--steel);font-weight:400}
 <div id="reader"><div class="box">
   <div class="hd"><span class="t" id="r-title"></span><span style="color:var(--dim)" id="r-src"></span>
     <span style="margin-left:auto;display:flex;gap:7px">
+      <button id="r-back" style="display:none">◀ pages</button>
+      <button id="r-more" style="display:none">pages ▶</button>
       <button id="r-copy">copy md</button>
       <button id="r-dl">download</button>
       <button id="r-close">close</button></span></div>
@@ -459,38 +461,79 @@ function load(f,shelf){
       $('insp').innerHTML='<div class="empty">hover to inspect · click to focus</div>'; }
   });
 }
+/* A vault holds notes in projects; a library holds documents on shelves. Same
+   screen, and calling a 676-page manual a note in a project reads as a bug. */
+var W={many:'notes',rail:'Projects',list:'Notes',shelf:'project'};
+function relabel(){
+  W={many:'documents',rail:'Shelves',list:'Documents',shelf:'shelf'};
+  $('s-notes-l').textContent=W.many; $('v-notes-l').textContent=W.many;
+  $('rail-l').textContent=W.rail;
+  $('w-shelf').placeholder='shelf (optional — becomes the folder)';
+  $('r-q').placeholder='ask about this document…';
+  $('askq').placeholder='how do you treat a deep wound?';
+}
 function projects(){
   fetch('/api/shelves').then(function(r){return r.json()}).then(function(rows){
     $('nproj').textContent='('+rows.length+')';
     $('projects').innerHTML=rows.map(function(s){
       return '<div class="row" data-shelf="'+esc(s.name)+'"><span>'+esc(s.name)+'</span>'
-            +'<span class="n">'+s.notes+' notes</span></div>';}).join('');
+            +'<span class="n">'+s.notes+' '+W.many+'</span></div>';}).join('');
   });
+}
+var SHELF='';
+function shelfList(d){
+  /* say how much of the shelf this is. 200 of 5,934 in alphabetical order,
+     with nothing on screen admitting it, is the reader-truncation bug again */
+  var head=(d.shown<d.total)? ('showing '+d.shown+' of '+d.total+' '+W.many
+                               +(d.q?(' matching “'+esc(d.q)+'”'):'')+'. filter to reach the rest')
+                            : (d.total+' '+W.many+(d.q?(' matching “'+esc(d.q)+'”'):''));
+  $('scount').textContent=head;
+  $('slist').innerHTML=(d.notes||[]).map(function(x){
+    return '<div class="item" data-note="'+esc(x.id)+'"><div class="n">'+esc(x.title)
+      +(x.pages>1?('<span style="color:var(--dim)"> · '+x.pages+' pp</span>'):'')
+      +'</div></div>';}).join('');
 }
 function openShelf(name){
   POS={};                       // a project is a different map, so lay it out fresh
+  SHELF=name;
   load('', name);
   fetch('/api/shelf?name='+encodeURIComponent(name)).then(function(r){return r.json()}).then(function(d){
     document.querySelectorAll('.row').forEach(function(el){
       el.classList.toggle('on', el.getAttribute('data-shelf')===name);});
     $('insp').innerHTML='<div style="color:var(--white)">'+esc(d.name)+'</div>'
-      +'<div class="m" style="color:var(--dim)">'+d.notes.length+' notes in this project</div>'
+      +'<div class="m" style="color:var(--dim)" id="scount"></div>'
       +'<div class="sec"><h3>What it is about</h3>'
       +(d.entities||[]).slice(0,10).map(function(x){return '<div class="pair" data-go="'+esc(x.name)+'">'
         +'<span class="a">'+esc(x.name)+'</span><span class="w">'+x.n+'</span></div>';}).join('')
-      +'</div><div class="sec"><h3>Notes</h3>'
-      +(d.notes||[]).map(function(x){return '<div class="item" data-note="'+esc(x.id)+'">'
-        +'<div class="n">'+esc(x.title)+'</div></div>';}).join('')
-      +'</div>';
+      +'</div><div class="sec"><h3>'+W.list+'</h3>'
+      +'<input id="sfilter" placeholder="filter by title…" style="width:100%;margin-bottom:7px">'
+      +'<div id="slist"></div></div>';
+    shelfList(d);
+    var t=null;
+    $('sfilter').addEventListener('input',function(){
+      clearTimeout(t); var v=this.value.trim();
+      t=setTimeout(function(){
+        fetch('/api/shelf?name='+encodeURIComponent(SHELF)+'&q='+encodeURIComponent(v))
+          .then(function(r){return r.json()}).then(shelfList);},220);
+    });
     $('askwhat').textContent=d.name;
   });
 }
-function openNote(id){
-  fetch('/api/note?id='+encodeURIComponent(id)).then(function(r){return r.json()}).then(function(d){
+function openNote(id, from){
+  fetch('/api/note?id='+encodeURIComponent(id)+(from?('&from='+from):''))
+   .then(function(r){return r.json()}).then(function(d){
     if(d.error) return;
-    CUR={id:d.id,title:d.title,text:d.text||''};
-    $('r-title').textContent=d.title; $('r-src').textContent=d.path||d.source;
+    CUR={id:d.id,title:d.title,text:d.text||'',pages:d.pages||1,
+         from:d.from||1,to:d.to||1,more:!!d.more};
+    $('r-title').textContent=d.title;
+    /* a book arrives a slice at a time, so the slice is named. Without this the
+       modal shows 28 pages of a 510-page manual and looks like the whole book */
+    $('r-src').textContent=(CUR.pages>1? ('pages '+CUR.from+'-'+CUR.to+' of '+CUR.pages+' · ') : '')
+                          +(d.path||d.source);
     $('r-body').textContent=d.text||'(empty)';
+    $('r-more').style.display=CUR.more?'':'none';
+    $('r-back').style.display=(CUR.from>1)?'':'none';
+    $('r-body').scrollTop=0;
     $('r-q').value=''; $('r-ans').innerHTML='';
     $('reader').classList.add('on'); $('r-q').focus();
   });
@@ -518,8 +561,15 @@ $('w-save').addEventListener('click',function(){
      setTimeout(function(){$('writer').classList.remove('on')},1400);
    });
 });
-var CUR={id:null,title:'',text:''};
-function mdOf(){ return '# '+CUR.title+'\n\n'+CUR.text; }
+var CUR={id:null,title:'',text:'',pages:1,from:1,to:1,more:false};
+/* the export carries the page range too, or a copied slice of a manual looks
+   like the manual the next time somebody reads it back */
+function mdOf(){ return '# '+CUR.title
+  +(CUR.pages>1?('\n\n*pages '+CUR.from+'-'+CUR.to+' of '+CUR.pages+'*'):'')
+  +'\n\n'+CUR.text; }
+$('r-more').addEventListener('click',function(){ openNote(CUR.id, CUR.to+1); });
+$('r-back').addEventListener('click',function(){
+  openNote(CUR.id, Math.max(1, CUR.from-(CUR.to-CUR.from+1))); });
 $('r-copy').addEventListener('click',function(){
   navigator.clipboard.writeText(mdOf()).then(function(){
     var b=$('r-copy'); b.textContent='copied'; setTimeout(function(){b.textContent='copy md'},1400); });
@@ -651,12 +701,14 @@ document.querySelectorAll('.tabs button').forEach(function(b){
 $('q').addEventListener('keydown',function(e){if(e.key==='Enter')load($('q').value.trim())});
 setInterval(function(){$('clock').textContent=new Date().toLocaleTimeString()},1000);
 fetch('/api/vitals').then(function(r){return r.json()}).then(function(d){
+  if(d.library) relabel();      // before projects(), which prints the word
   $('v-notes').textContent=fmt(d.notes);$('v-chunks').textContent=fmt(d.chunks);
   $('v-vec').textContent=fmt(d.vectors);$('v-ents').textContent=fmt(d.entities);
   $('v-dedge').textContent=fmt(d.drawable_edges);
   $('s-notes').textContent=fmt(d.notes);$('s-ents').textContent=fmt(d.entities);
-  $('s-ment').textContent=fmt(d.mentions);$('s-edges').textContent=fmt(d.drawable_edges);});
-size(); projects(); load(''); tick();
+  $('s-ment').textContent=fmt(d.mentions);$('s-edges').textContent=fmt(d.drawable_edges);
+  projects();});
+size(); load(''); tick();
 health(false); setInterval(function(){health(false)},60000);
 if(location.hash==='#setup') openSetup();      // linkable, so support can say "open /#setup"
 if(location.hash==='#help') $('help').classList.add('on');

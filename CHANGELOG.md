@@ -4,6 +4,83 @@ Dates are when the work landed, not when it was tagged.
 
 ## Unreleased
 
+### The cockpit opens on a library of books
+
+Pointed at LAST LIGHT, 6,043 documents over 18,539 pages and 27,746 chunks, the
+cockpit drew an empty black canvas and stayed there. Every number in the top
+strip was a dash and the badge said READY. Only the shelf rail filled, because
+it is the one panel that does not touch the graph.
+
+The graph query was still running. It takes **834 seconds** on that corpus, on
+an M5 Max, and the page fires three requests that each want it, so three copies
+ran at once. The join is over `mention`, which carries a row per chunk, and the
+largest document here has 19,750 of them: 1.9 billion intermediate rows to
+produce 1.5 million answers. `COUNT(DISTINCT a.doc_id)` was already collapsing
+those duplicates, it was just paying for them first. Collapsing them before the
+join instead gives the same rows in **3 seconds**, and the vault's output is
+unchanged to the row.
+
+That made the map appear, and the map was nonsense: `urethral / thrombosis`,
+`Epilobium / Sagittaria`, Pokémon. Every edge sat exactly on the MIN_SHARED
+floor and the ten highest-degree names were each in three documents. Two things
+were wrong, and they are asked separately now, in `_shape()`.
+
+Co-occurrence needs a unit that is about one thing. A note is. A 676-page
+survival manual is not, so at document scale every term in it co-occurs with
+every other, and three medical books that each contain both words somewhere
+made a maximum-PMI edge. Where most of a corpus's pages sit inside multi-page
+documents, co-occurrence moves to the chunk, which is the note-sized unit a
+library already has. On LAST LIGHT that drops the candidate pairs from 1,512,160
+to 336,609 and the top of the degree list stops being flukes: water, injury,
+surgery, shelter, treatment.
+
+The second thing was the population. `entities.py` keeps names and subjects in
+one table, and a PMI taken across both compares two different measurements. A
+subject averages 143 mentions here and a name 15, so the bigger population
+wins on volume. Drawn together at chunk scale the map came out as Vikidia
+geography: Bangladesh, Anne Boleyn, Thomas Astruc. Drawn as subjects alone it
+comes out as the library: suture, fractures, tissue, closure, chlorination,
+pickling. So where a subject index exists it is the one drawn, because running
+`entities.py subjects` over a corpus says its proper nouns were not the answer.
+
+Both switches are measured off the corpus and both are inert on a note vault:
+it has no multi-page document and no subject row. Every cockpit endpoint was
+diffed against the shipped build on the 2,378-note vault and is identical.
+
+`MIN_SHARED` is 3 shared documents and stays 3. The chunk unit gets its own
+floor of 8, because there are 4.6 times as many chunks as documents here and 3
+of them is not the same claim. Measured at 3, 5, 8 and 12: at 3 the seeds are
+still docs=3 flukes, at 8 they are water, plate, surgery, injuries, shelter.
+
+### A book is not a note, and the cockpit stops pretending otherwise
+
+The reader handed back `text[:60000]` with no page numbers. On *Nuclear War
+Survival Skills* that is 5.5% of the book, 28 pages of 510, presented as the
+book. 59 documents in this corpus were over that cap. It now reads whole pages,
+marks each one, says "pages 1-22 of 510" in the header, and pages forward and
+back. Copy and download carry the range too, so a slice does not come back later
+looking like the whole thing.
+
+Asking a question about a document had the same hole. The first 24,000
+characters went to the model under a prompt swearing the document was
+reproduced below, so the question was really being asked of the front matter.
+Asked how much drinking water to store per person in a fallout shelter, the old
+path answered "The provided note does not say" while the book answers it across
+pages 107 to 313. The refusal gate was working; it was being fed the wrong 2% of
+the book. When a document does not fit, its own chunks are ranked against the
+question now and the best are sent in page order with their pages, and the
+prompt says that is what they are. The same question comes back with the
+quantity, the container and a page for each. Lexical rather than vector: the
+field is already one document, and the device runs one inference at a time. A
+note still goes over whole, under the original wording, unchanged.
+
+The shelf list was `LIMIT 200`. That was the whole of a 90-note project and 3%
+of a 5,934-article encyclopedia, in alphabetical order, with nothing saying so.
+It now reports how many there are and takes a title filter, and it orders by
+length, which is title order when every document is one page and puts the books
+first when they are not. The rail says Shelves and documents rather than
+Projects and notes when the corpus is a library.
+
 ### The entity index can tell a name from a word
 
 `Use`, `Related`, `Tech Details`, `Full`, `Run`, `Core`, `Live` and `Path` were all

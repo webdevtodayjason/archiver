@@ -67,6 +67,23 @@ aside.r{padding:0;display:grid;grid-template-rows:minmax(0,1fr) auto;overflow:hi
 .you{margin-top:13px;color:var(--white);border-left:2px solid var(--hot);padding-left:8px}
 .you .sc{color:var(--dim);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase}
 .cite{color:var(--dim);font-size:11px;margin-top:3px}
+/* the overview turn: a player, then the script it read, line by line */
+.ovrow{display:flex;gap:6px;align-items:center;margin-top:6px}
+.ovrow .h{color:var(--dim);font-size:10.5px;flex:1;text-align:right}
+.ovbar{height:3px;background:var(--line);border-radius:2px;overflow:hidden;margin:7px 0 4px}
+.ovbar i{display:block;height:100%;background:var(--hot);width:0;transition:width .5s linear}
+audio{width:100%;margin:3px 0 8px;border:1px solid var(--line2);border-radius:5px;
+  background:var(--panel);display:block}
+audio::-webkit-media-controls-panel{background:var(--panel)}
+.sline{border-top:1px solid var(--line);padding:5px 7px;cursor:pointer;border-left:2px solid transparent}
+.sline:hover{background:var(--panel)}
+.sline.on{background:#0d1a12;border-left-color:var(--hot)}
+.sline .w{color:var(--steel);font-size:10px;letter-spacing:.14em}
+.sline.b .w{color:var(--dim)}
+.sline .t{color:var(--ink);white-space:normal}
+.sline.on .t{color:var(--white)}
+.sline .c{color:var(--dim);font-size:10.5px;margin-top:2px}
+.sline.mute .t{color:var(--dim);font-style:italic}
 .dot{width:7px;height:7px;border-radius:50%;display:inline-block;background:var(--dim);flex:none}
 .dot.up{background:var(--hot);box-shadow:0 0 7px var(--hot)}
 .dot.down{background:#ff5f56;box-shadow:0 0 7px #ff5f56}
@@ -167,6 +184,8 @@ footer b{color:var(--steel);font-weight:400}
       <div class="pinned" id="asksec">
         <h3>Ask <span id="askwhat" style="color:var(--steel)">everything</span></h3>
         <div class="ask"><input id="askq" placeholder="what did we decide?"><button id="askgo">Ask</button></div>
+        <div class="ovrow"><button id="ovgo">▶ audio overview</button>
+          <span class="h" id="ovhint">two hosts, out of these notes</span></div>
       </div>
     </aside>
   </main>
@@ -282,6 +301,13 @@ footer b{color:var(--steel);font-weight:400}
       <h4>Asking one note</h4>
       <p>Open a note and use the box at the bottom of that window. That reads the
          whole note rather than searching.</p>
+      <h4>Audio overview</h4>
+      <p><code>▶ audio overview</code> puts two hosts on whatever the scope is and
+         speaks it on the device. Around three and a half minutes of work for five
+         minutes of audio, with a progress line while it runs.</p>
+      <p>Every line shows the note it came from, and clicking a line jumps the audio
+         to it. A line the hosts could not source is deleted before it is spoken, and
+         the count of those is shown above the script.</p>
     </div>
 
     <div class="tab" id="t-write">
@@ -331,6 +357,12 @@ var esc=function(s){var d=document.createElement('div');d.textContent=s==null?''
 /* the model writes markdown; only bold and bullets ever show up, so only those are handled */
 var md=function(s){return esc(s).replace(/\*\*([^*]+)\*\*/g,'<b style="color:var(--white)">$1</b>')
                                 .replace(/^\s*[*-]\s+/gm,'· ')};
+/* What the rail is pointed at, as a kind and not just the word in the header.
+   The label alone cannot say whether "Keelpin" is a project or a name, and the
+   overview needs different passages for each. */
+var SCOPE={kind:'corpus',name:''};
+function setScope(kind,name){ SCOPE={kind:kind,name:name||''};
+  $('askwhat').textContent = kind==='corpus' ? 'everything' : name; }
 var cv=$('c'), ctx=cv.getContext('2d'), DPR=window.devicePixelRatio||1;
 var NODES=[], EDGES=[], POS={}, focus='', hover=null, alpha=1, view={x:0,y:0,k:1}, drag=null;
 
@@ -430,7 +462,7 @@ function inspect(name){
       +(d.notes||[]).slice(0,12).map(function(x){return '<div class="item" data-note="'+esc(x.id)+'">'
         +'<div class="n">'+esc(x.title)+'</div><div class="m">'+esc(x.source)+'</div></div>';}).join('')
       +'</div>';
-    $('askwhat').textContent=d.name; bottom();
+    setScope('entity', d.name); bottom();
   });
 }
 function load(f,shelf){
@@ -455,7 +487,7 @@ function load(f,shelf){
                           : (f? ('nebula · '+f) : 'corpus-linked relations');
     $('s-focus').textContent = shelf? ('project: '+shelf) : (f?('focus: '+f):'');
     if(f) inspect(f);
-    else if(!shelf){ $('askwhat').textContent='everything';
+    else if(!shelf){ setScope('corpus','');
       $('insp').innerHTML='<div class="empty">hover to inspect · click to focus</div>'; }
   });
 }
@@ -482,7 +514,7 @@ function openShelf(name){
       +(d.notes||[]).map(function(x){return '<div class="item" data-note="'+esc(x.id)+'">'
         +'<div class="n">'+esc(x.title)+'</div></div>';}).join('')
       +'</div>';
-    $('askwhat').textContent=d.name;
+    setScope('shelf', d.name);
   });
 }
 function openNote(id){
@@ -544,6 +576,9 @@ $('r-q').addEventListener('keydown',function(e){if(e.key==='Enter')askNote()});
 $('r-close').addEventListener('click',function(){$('reader').classList.remove('on')});
 $('reader').addEventListener('click',function(e){if(e.target===$('reader'))$('reader').classList.remove('on')});
 document.addEventListener('click',function(e){
+  var o=e.target.closest('[data-ov]'); if(o){ var at=o.getAttribute('data-at');
+    var au=$('au-'+o.getAttribute('data-ov'));
+    if(au&&at!==''){ au.currentTime=parseFloat(at); au.play(); } return; }
   var p=e.target.closest('[data-go]'); if(p){ load(p.getAttribute('data-go')); return; }
   var s=e.target.closest('[data-shelf]'); if(s){ openShelf(s.getAttribute('data-shelf')); return; }
   var n=e.target.closest('[data-note]'); if(n){ openNote(n.getAttribute('data-note')); }
@@ -572,6 +607,79 @@ function doAsk(){
 }
 $('askgo').addEventListener('click',doAsk);
 $('askq').addEventListener('keydown',function(e){if(e.key==='Enter')doAsk()});
+
+/* The overview is minutes of work on a device that does one thing at a time, so
+   it is a job with a progress line rather than a request the browser waits on.
+   It lands in the same stack as an answer because it is one: a longer answer,
+   about a whole scope instead of a question. */
+var OVPOLL=null, OVAT={};
+function ovTurn(label){
+  var id='t'+(++TURN);
+  $('ans').insertAdjacentHTML('beforeend',
+    '<div class="you"><div class="sc">'+esc(label)+'</div>audio overview</div>'
+    +'<div id="'+id+'"><div class="ans" style="color:var(--dim)">starting…</div></div>');
+  bottom(); return id;
+}
+function ovStart(){
+  if(OVPOLL) return;
+  var id=ovTurn(SCOPE.kind==='corpus'?'everything':SCOPE.name);
+  fetch('/api/overview',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({kind:SCOPE.kind,name:SCOPE.name})})
+   .then(function(r){return r.json().then(function(d){return {code:r.status,d:d}})})
+   .then(function(x){
+     if(x.code!==200){ $(id).innerHTML='<div class="ans">'+esc(x.d.error||'could not start')+'</div>';
+       bottom(); return; }
+     ovPoll(id);
+   }).catch(function(e){ $(id).innerHTML='<div class="ans">'+esc(String(e))+'</div>'; bottom(); });
+}
+function ovPoll(id){
+  clearInterval(OVPOLL);
+  OVPOLL=setInterval(function(){
+    fetch('/api/overview').then(function(r){return r.json()}).then(function(d){
+      var j=d.job||{};
+      if(j.state==='running'){
+        var pct=j.total?Math.round(j.done/j.total*100):0;
+        $(id).innerHTML='<div class="ans" style="color:var(--dim)">'+esc(j.phase||'')+' · '
+          +esc(j.step||'')+'</div><div class="ovbar"><i style="width:'+pct+'%"></i></div>'
+          +'<div class="cite">'+(j.done||0)+' of '+(j.total||0)+'</div>';
+        return;
+      }
+      clearInterval(OVPOLL); OVPOLL=null;
+      if(j.state==='error'){ $(id).innerHTML='<div class="ans">'+esc(j.error||'it failed')+'</div>'; }
+      else if(j.state==='done'&&j.result){ ovRender(id,j.result); }
+      bottom();
+    }).catch(function(){ clearInterval(OVPOLL); OVPOLL=null; });
+  },1500);
+}
+function ovRender(id,r){
+  var d=r.duration||0, mm=Math.floor(d/60), ss=Math.round(d%60);
+  var head=esc(r.title)+' · '+mm+'m'+(ss<10?'0':'')+ss+'s · '+(r.lines||[]).length
+    +' lines from '+(r.sections||[]).length+' topics'
+    +((r.dropped&&r.dropped.length)?' · '+r.dropped.length+' withheld as ungrounded':'');
+  var h=(r.audio?'<audio controls preload="metadata" id="au-'+id+'" src="/api/overview/audio?slug='
+        +encodeURIComponent(r.slug)+'"></audio>':'')
+    +'<div class="cite">'+head+'</div>';
+  h+=(r.lines||[]).map(function(l,i){
+    return '<div class="sline'+(l.host==='B'?' b':'')+(l.spoken===false?' mute':'')+'"'
+      +' data-ov="'+id+'" data-at="'+(l.start==null?'':l.start)+'" id="'+id+'-l'+i+'">'
+      +'<span class="w">'+esc(l.host)+'</span> <span class="t">'+esc(l.text)+'</span>'
+      +'<div class="c">'+esc((l.sources||[]).join(' · '))+'</div></div>';}).join('');
+  $(id).innerHTML=h;
+  var au=$('au-'+id);
+  if(au) au.addEventListener('timeupdate',function(){
+    /* the line being spoken, so the citation under it is the one on screen */
+    var cur=-1, ls=r.lines;
+    for(var i=0;i<ls.length;i++){ if(ls[i].start!=null&&ls[i].start<=au.currentTime) cur=i; }
+    if(OVAT[id]===cur) return; OVAT[id]=cur;
+    for(var j=0;j<ls.length;j++){ var el=$(id+'-l'+j); if(el) el.classList.toggle('on',j===cur); }
+  });
+}
+$('ovgo').addEventListener('click',ovStart);
+/* A reload does not stop the job, so pick it back up rather than leaving the
+   button to answer "already running" with no way to see what is running. */
+fetch('/api/overview').then(function(r){return r.json()}).then(function(d){
+  if(d.job&&d.job.state==='running') ovPoll(ovTurn(d.job.scope||'everything'));
+});
 function pill(ok,label,detail){
   return '<div class="chk"><span class="dot '+(ok?'up':'down')+'"></span>'
         +'<span class="l">'+esc(label)+'</span><span class="w">'+esc(detail)+'</span></div>';

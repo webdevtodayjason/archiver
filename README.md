@@ -116,6 +116,36 @@ profile drawn from 136 notes.
 Names are folded on case, so `HOLACE` and `HoLaCe` are one entity and the spelling that
 actually appears most often is the one you see.
 
+## Listening to it
+
+The button under Ask writes a two-host conversation about whatever the rail is pointed at
+and speaks it on the device, in two voices.
+
+```bash
+python3 overview.py shelf "Claude Code"     # a project
+python3 overview.py entity Richard          # a name
+python3 overview.py corpus                  # the lot
+```
+
+Listening is the only way to read a corpus you are never going to sit down and read. The
+problem is that everything making the Archivist worth trusting is visible on a page, and
+speech goes past once sounding equally sure of itself whatever it says. So every line has
+to end with the passage it came from, and a line that cites nothing, or cites a passage
+it was not given, is deleted before it is ever synthesised. What got deleted is counted
+and shown. In the rail each line carries its source underneath and clicking one jumps the
+audio to it.
+
+Nothing new is retrieved: a name's passages are the same mentions the profile path reads,
+a project's topics are the names that recur inside it, and the archive's are the bridges
+the map already draws.
+
+The device runs one inference at a time and cuts a request off around 220 seconds, so the
+script is written a section per call and every line is synthesised on its own, which
+takes about a fifth of the time the line lasts. Five minutes of audio takes about three
+and a half minutes to make. The pieces are joined with the `wave` module, because nothing
+in here is allowed to run another program, and they land beside the corpus in
+`overviews/` as a wav and the script that produced it.
+
 Settings live behind the light in the top bar: which device, which port, the key, an
 alternate chat endpoint if you want the answering model somewhere else, and where your
 vault is. It tells you which link is down rather than making you read a log.
@@ -124,7 +154,7 @@ vault is. It tells you which link is down rather than making you read a log.
 
 Working: add, text-layer triage, OCR through any driver, cleaning, chunking with
 provenance, quarantine, search, export, embedding, retrieval with citations, entity
-index, the cockpit.
+index, the cockpit, audio overviews.
 
 Not yet: ZIM extraction (needs libzim), parallel workers inside one machine.
 

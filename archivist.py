@@ -84,10 +84,17 @@ sentences. No preamble."""
 
 
 def die(msg):
+    """Stop with a message a person can act on, not a traceback."""
     sys.exit(f"  {msg}")
 
 
 def api(path, body, timeout=300, base=None, key=None):
+    """One call to an OpenAI-compatible endpoint, device by default.
+
+    base and key exist so the answering model can live somewhere other than the
+    device while the embeddings stay on it. That split is worth supporting: the
+    embeddings have to be on whatever machine holds the index, and the chat
+    model does not."""
     if base is None and not (HOST and KEY):
         die("Set TIINY_HOST and TIINY_KEY.")
     url = (base.rstrip("/") + path) if base else f"http://{HOST}:{PORT}{path}"
@@ -101,6 +108,10 @@ def api(path, body, timeout=300, base=None, key=None):
 
 # ------------------------------------------------------------------ index
 def _schema(c):
+    """The vector table, kept beside the chunks rather than in its own store.
+
+    One file to copy and one file to lose. A vault that needs a second service
+    running to answer anything is not a vault."""
     c.execute("""CREATE TABLE IF NOT EXISTS vec (
                    chunk_id INTEGER PRIMARY KEY REFERENCES chunk(id),
                    dim INTEGER NOT NULL,
@@ -109,6 +120,11 @@ def _schema(c):
 
 
 def embed(texts):
+    """Embed a batch on the device.
+
+    Raises rather than returning empty on a malformed reply, because an empty
+    result here would be written to the index as a hole nobody notices until a
+    search quietly stops finding something."""
     d = api("/v1/embeddings", {"model": EMBED_MODEL, "input": texts})
     if "data" not in d:
         raise RuntimeError(str(d)[:160])
@@ -116,6 +132,10 @@ def embed(texts):
 
 
 def norm(v):
+    """Unit-length, so a dot product is a cosine.
+
+    Every stored vector is normalised on the way in, which is what lets the
+    search be one matrix multiply instead of a division per row."""
     n = math.sqrt(sum(x * x for x in v)) or 1.0
     return [x / n for x in v]
 
@@ -159,6 +179,11 @@ def index(batch=16, limit=None):
 
 # ------------------------------------------------------------------ search
 def _load(c):
+    """Every stored vector as a matrix, with the broken ones removed first.
+
+    Returns (chunk_ids, matrix, using_numpy). The numpy path concatenates the
+    blobs and reshapes, which is fast and is also why the length check above it
+    matters so much."""
     rows = c.execute("SELECT chunk_id, dim, v FROM vec").fetchall()
     if not rows:
         die("Nothing is indexed. Run: archivist index")
@@ -187,6 +212,11 @@ def _load(c):
 
 
 def search(c, question, k=TOP_RETRIEVE):
+    """The k passages closest to the question, each carrying its provenance.
+
+    Closest is not the same as relevant, and this function does not pretend
+    otherwise: it returns the similarity alongside every hit and leaves the
+    decision about whether that is good enough to ask(), which has a floor."""
     ids, mat, fast = _load(c)
     qv = norm(embed([question])[0])
     if fast:
@@ -222,6 +252,7 @@ def search(c, question, k=TOP_RETRIEVE):
 
 
 def cite(h):
+    """How a passage is named in an answer: the title, and a page when there is one."""
     # A wiki article is one page, so "p1" would be noise - the title is the
     # whole address. Books get the page range, which is the point of them.
     if (h.get("doc_pages") or 0) <= 1:
@@ -257,6 +288,24 @@ def pick_chat():
 
 
 def ask(question, show_sources=True, quiet=False):
+    """Answer from the vault, or refuse.
+
+    Two gates, and both of them exist because the failure they prevent looks
+    exactly like success.
+
+    The first is the similarity floor. If nothing retrieved is close enough to
+    be about the question, this refuses before a model ever sees the passages,
+    because a model handed six irrelevant paragraphs and a question will write a
+    fluent answer out of them.
+
+    The second is mechanical. The system prompt asks for a citation on every
+    claim, and an instruction like that can be ignored silently. So the answer
+    is parsed for [n] markers and checked against the passages actually sent. An
+    answer that cites nothing is withheld and the refusal is returned instead,
+    no matter how good it reads.
+
+    Returns the answer, whether it refused, which passages it cited, and the
+    sources, so a caller that is not a terminal can show its own working."""
     c = archive.db()
     _schema(c)
     hits = search(c, question)
@@ -405,6 +454,7 @@ def refusal_test():
 
 
 def main():
+    """The command line: index, ask, search, refusal-test."""
     p = argparse.ArgumentParser(prog="archivist")
     sub = p.add_subparsers(dest="cmd")
     i = sub.add_parser("index")

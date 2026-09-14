@@ -67,6 +67,12 @@ def _c():
 
 
 def _ensure_lease_columns(c):
+    """Add the lease columns to an existing corpus, in place.
+
+    A corpus that took days to build predates the fleet, and telling someone to
+    rebuild it to get a feature is not a real option. These are additive, so the
+    same database still opens in a single-machine run that knows nothing about
+    leases."""
     cols = {r[1] for r in c.execute("PRAGMA table_info(page)")}
     if "claimed_by" not in cols:
         c.execute("ALTER TABLE page ADD COLUMN claimed_by TEXT")
@@ -98,6 +104,13 @@ _CHUNKED_AT = [0]
 
 
 def claim(worker, n):
+    """Lease up to n pages to a worker.
+
+    Leasing rather than handing out is what makes the fleet survive a machine
+    dying. A claimed page carries who took it and when, and _reap() puts it back
+    when the lease expires, so losing a worker costs a few pages instead of the
+    run. Ordered by document and page so one worker tends to get a run of pages
+    from one PDF, which keeps its local cache of that file useful."""
     with _LOCK:
         c = _c()
         _reap(c)
@@ -129,6 +142,12 @@ def claim(worker, n):
 
 
 def submit(rows):
+    """Record finished pages and release their leases.
+
+    done_by is set from the submitting worker, falling back to whoever held the
+    lease, and claimed_by is cleared in the same statement. One statement per
+    page, so a worker that dies halfway through a batch leaves the rest leased
+    and reapable rather than half-written."""
     with _LOCK:
         c = _c()
         for r in rows:
@@ -144,6 +163,7 @@ def submit(rows):
 
 
 def stats():
+    """Fleet state for the dashboard, reaping expired leases on the way past."""
     with _LOCK:
         c = _c()
         # Reap here as well as in claim(). Reaping only on claim meant that once
@@ -157,6 +177,10 @@ def stats():
 
 
 def _stats(c):
+    """Progress, rate and per-worker detail, computed from the page table alone.
+
+    No counters are kept anywhere, which means the numbers cannot drift from the
+    work. A restarted hub reports the truth immediately."""
     by = {r["status"]: r["n"] for r in
           c.execute("SELECT status, COUNT(*) n FROM page GROUP BY status")}
     total = sum(by.values()) or 1
@@ -314,9 +338,11 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *a):
+        """Silence per-request logging; the dashboard is the interesting output."""
         pass
 
     def _send(self, code, body, ctype="application/json"):
+        """One reply, with the length set so workers can keep the connection alive."""
         if isinstance(body, str):
             body = body.encode()
         self.send_response(code)
@@ -326,6 +352,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):  # noqa: N802
+        """The dashboard, its JSON, and the PDF fetch a worker needs to render locally."""
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
         if u.path in ("/", "/index.html"):
@@ -362,6 +389,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(404, json.dumps({"error": "no such path"}))
 
     def do_POST(self):  # noqa: N802
+        """Worker traffic: claim a batch of pages, submit finished ones."""
         u = urllib.parse.urlparse(self.path)
         n = int(self.headers.get("Content-Length") or 0)
         try:
@@ -378,6 +406,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(port=8430):
+    """Run the hub.
+
+    The database stays on this machine and the workers talk HTTP, because
+    SQLite over a network filesystem fails silently and takes a corpus that took
+    days to build with it."""
     with _LOCK:
         back = _reap(_c())
     s = stats()

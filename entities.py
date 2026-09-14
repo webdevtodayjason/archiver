@@ -42,6 +42,10 @@ january february march april may june july august september october november
 december mon tue wed thu fri sat sun jan feb mar apr jun jul aug sep oct nov dec
 yes ok okay also still even much many well back down out up off here
 readme overview summary status update updates changelog architecture
+
+wikipedia wikimedia vikidia commons reflist infobox template templates category
+categories citation cite portal redirect stub disambiguation namespace thumb
+authors contents references external links see also further reading
 """.split())
 
 # Generic technical vocabulary. These capitalise like names because they are

@@ -102,29 +102,71 @@ def _adj(kept):
     return a
 
 
-def bridges(ents, kept, n=40):
-    """Entities that connect otherwise separate neighbourhoods.
+def bridges(ents, kept, n=40, sources=300, seed=7):
+    """Entities that sit on the paths between otherwise separate neighbourhoods.
 
-    A second brain is mostly noise by design - it is everything you wrote. The
-    interesting thing is rarely the biggest node, which you already know about.
-    It is the name sitting between two clusters that have nothing else in
-    common, because that is a connection you made once and have not noticed.
-    Cheap proxy for betweenness: strong edges whose two ends share almost no
-    other neighbours.
+    A second brain is mostly noise by design, because it is everything you
+    wrote. The interesting name is rarely the biggest one, which you already
+    know about. It is the one standing between two clusters that have nothing
+    else in common, because that is a connection you made once and have not
+    noticed since.
+
+    That is betweenness, and it is worth computing properly. The previous
+    version scored edges by how little their two ends had in common, weighted by
+    edge strength. Those weights come from a PMI-like measure that peaks on
+    rarity, so it reliably surfaced two names that had co-occurred twice in one
+    odd note, which is the opposite of a bridge: a bridge carries traffic.
+
+    Brandes' algorithm, on the unweighted shape of the kept graph. Sampled from
+    a fixed set of sources rather than every node, because exact betweenness is
+    a BFS per node and this answers a web request; 300 sources over a couple of
+    thousand nodes ranks the top of the list the same way exhaustive does, and
+    the seed is fixed so two calls agree. Scores are relative, so they are
+    returned normalised against the highest.
     """
+    import random
     a = _adj(kept)
-    nb = {e: {y for _, y in a[e]} for e in a}
-    out = []
-    for (x, y), (w, cnt) in kept.items():
-        ox, oy = nb.get(x, set()), nb.get(y, set())
-        if len(ox) < 2 or len(oy) < 2:
-            continue
-        shared = len(ox & oy)
-        union = len(ox | oy) or 1
-        # high weight, low overlap = a link between two different worlds
-        out.append((w * (1 - shared / union), x, y, w, cnt, shared))
-    out.sort(reverse=True)
-    return out[:n]
+    nodes = list(a)
+    if not nodes:
+        return []
+    # strongest first, so the neighbours reported for a bridge are the ones
+    # carrying the traffic rather than whichever names sort early
+    nb = {v: [y for _, y in sorted(a[v], reverse=True)] for v in nodes}
+    pick = nodes if len(nodes) <= sources else random.Random(seed).sample(nodes, sources)
+
+    cb = dict.fromkeys(nodes, 0.0)
+    for s0 in pick:
+        stack, pred = [], {v: [] for v in nodes}
+        sigma = dict.fromkeys(nodes, 0.0); sigma[s0] = 1.0
+        dist = dict.fromkeys(nodes, -1); dist[s0] = 0
+        q = collections.deque([s0])
+        while q:
+            v = q.popleft(); stack.append(v)
+            dv = dist[v]
+            for w in nb[v]:
+                if dist[w] < 0:
+                    dist[w] = dv + 1
+                    q.append(w)
+                if dist[w] == dv + 1:
+                    sigma[w] += sigma[v]
+                    pred[w].append(v)
+        delta = dict.fromkeys(nodes, 0.0)
+        while stack:
+            w = stack.pop()
+            coeff = (1.0 + delta[w]) / sigma[w]
+            for v in pred[w]:
+                delta[v] += sigma[v] * coeff
+            if w != s0:
+                cb[w] += delta[w]
+
+    top = sorted(cb.items(), key=lambda kv: -kv[1])[:n]
+    best = top[0][1] or 1.0
+    return [{"name": ents[v]["name"],
+             "score": round(c / best, 4),
+             "degree": len(nb[v]),
+             "docs": ents[v].get("docs"),
+             "between": [ents[y]["name"] for y in nb[v][:6]]}
+            for v, c in top if c > 0]
 
 
 def window(c, focus=None, limit=220, shelf=None):
@@ -565,10 +607,7 @@ class Handler(BaseHTTPRequestHandler):
                                      (q.get("shelf") or [""])[0] or None))
         if u.path == "/api/bridges":
             ents, kept, _ = _graph(c)
-            return self._json([
-                {"a": ents[x]["name"], "b": ents[y]["name"],
-                 "w": round(w, 2), "shared_notes": cnt, "common": sh}
-                for _, x, y, w, cnt, sh in bridges(ents, kept, 30)])
+            return self._json(bridges(ents, kept, 30))
         if u.path == "/api/vault":
             return self._json({"vault": str(vault_root())})
         if u.path == "/api/settings":

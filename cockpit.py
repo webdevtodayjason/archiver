@@ -1056,4 +1056,5 @@ def _library_selfcheck():
 if __name__ == "__main__":
     if "--selfcheck" in sys.argv:
         sys.exit(selfcheck())
-    run(int(sys.argv[1]) if len(sys.argv) > 1 else 8500)
+    # The farm hands the port in TIINYAPP_PORT, so farm start --port N moves it.
+    run(int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("TIINYAPP_PORT") or 8500))

@@ -4,6 +4,10 @@ Dates are when the work landed, not when it was tagged.
 
 ## Unreleased
 
+## 0.1.1
+
+- The cockpit reads TIINYAPP_PORT when no port is given, so `farm start tiiny-brain --port N` moves it.
+
 ### The cockpit opens on a library of books
 
 Pointed at LAST LIGHT, 6,043 documents over 18,539 pages and 27,746 chunks, the

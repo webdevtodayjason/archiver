@@ -26,10 +26,27 @@
           "tesseract (local)",
           "paddleocr (local)"
         ]
+      },
+      {
+        "id": "Qwen/Qwen3-Embedding-0.6B",
+        "npu": 1,
+        "role": "embeds chunks and questions, so the archive can be searched",
+        "required": true,
+        "managed": false
+      },
+      {
+        "id": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "npu": 7,
+        "role": "speaks the two hosts in an audio overview",
+        "required": false,
+        "managed": true,
+        "alternatives": [
+          "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+        ]
       }
     ],
-    "npu_resident": 0,
-    "npu_peak": 4,
+    "npu_resident": 1,
+    "npu_peak": 8,
     "runtime": {
       "python": ">=3.9",
       "deps": []
@@ -62,6 +79,6 @@
   "privacy": {
     "egress": "none",
     "telemetry": false,
-    "stores": "Extracted text, page confidences and chunks, in SQLite beside the tool."
+    "stores": "Extracted text, page confidences and chunks, in SQLite beside the tool. Audio overviews are written beside it too, as a wav and the script that produced it."
   }
 }

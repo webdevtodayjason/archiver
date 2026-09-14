@@ -32,6 +32,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import archive
+import overview
 
 HERE = pathlib.Path(__file__).resolve().parent
 STATIC = HERE / "static"
@@ -584,6 +585,41 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj), "application/json")
 
+    def _audio(self, path):
+        """Serve a wav, honouring Range.
+
+        Not decoration. An <audio> element asks for bytes=0- before it will play
+        anything, and Safari refuses a response that answers 200 with the whole
+        file instead of 206 with the range it asked for. The overview is five
+        minutes of 24kHz PCM, so the seek bar has to work too.
+        """
+        size = path.stat().st_size
+        m = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
+        start, end = 0, size - 1
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                start = int(m.group(1))
+                if m.group(2):
+                    end = min(int(m.group(2)), end)
+            else:
+                start = max(0, size - int(m.group(2)))
+            if start > end or start >= size:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.end_headers()
+                return
+        with path.open("rb") as fh:
+            fh.seek(start)
+            blob = fh.read(end - start + 1)
+        self.send_response(206 if m else 200)
+        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Accept-Ranges", "bytes")
+        if m:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Content-Length", str(len(blob)))
+        self.end_headers()
+        self.wfile.write(blob)
+
     def do_GET(self):  # noqa: N802
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
@@ -612,6 +648,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(note(c, int((q.get("id") or ["0"])[0])))
         if u.path == "/api/entity":
             return self._json(entity(c, (q.get("name") or [""])[0]))
+        if u.path == "/api/overview":
+            return self._json({"job": overview.job(), "saved": overview.saved()})
+        if u.path == "/api/overview/get":
+            d = overview.load((q.get("slug") or [""])[0])
+            return self._json(d or {"error": "no such overview"}, 200 if d else 404)
+        if u.path == "/api/overview/audio":
+            p = overview.audio_path((q.get("slug") or [""])[0])
+            if not p:
+                return self._send(404, "no such overview", "text/plain")
+            return self._audio(p)
         return self._send(404, "no such path", "text/plain")
 
     def do_POST(self):  # noqa: N802
@@ -653,6 +699,14 @@ class Handler(BaseHTTPRequestHandler):
             if doc:
                 return self._json(ask_doc(_db(), int(doc), qn))
             return self._json(ask(_db(), qn, (body.get("focus") or "").strip()))
+        if u.path == "/api/overview":
+            r = overview.start_job((body.get("kind") or "corpus").strip(),
+                                   (body.get("name") or "").strip() or None)
+            # 409 rather than an error field, because the browser polls this and
+            # "already running" is the normal answer to a double click, not a
+            # fault worth showing anybody.
+            return self._json(r, 409 if r.get("busy")
+                              else (400 if r.get("error") else 200))
         return self._send(404, "no such path", "text/plain")
 
 
@@ -720,7 +774,20 @@ def selfcheck():
 
     # the routing rule is the thing most likely to rot silently
     print("  " + entities._routing_selftest())
-    assert (STATIC / "cockpit.html").read_bytes().count(b"<title>") == 1
+
+    # The audio overview, as far as it goes without a device. The citation
+    # filter, the request splitter and the concatenation are all checkable here
+    # and all three are places where a break looks like success: a script that
+    # lost its grounding still reads well, an oversized request only fails on a
+    # busy device, and a mismatched sample rate concatenates perfectly happily.
+    print("  " + overview._script_selftest())
+    print("  " + overview._speech_split_selftest())
+    print("  " + overview._stitch_selftest())
+    print("  " + overview._plan_selftest(archive.db()))
+
+    page = (STATIC / "cockpit.html").read_bytes()
+    assert page.count(b"<title>") == 1
+    assert b"/api/overview" in page, "the page has no way to reach the overview"
     print("  routing and page: ok")
 
     import shutil

@@ -4,6 +4,35 @@ Dates are when the work landed, not when it was tagged.
 
 ## Unreleased
 
+### Audio overviews: two hosts, talking about your notes
+
+`overview.py`, and a button next to Ask. Point it at a project, a name or the whole
+archive and it writes a two host conversation about it and speaks it on the device. The
+citation for every line sits under it in the rail, and clicking a line jumps the audio
+there, so the thing it drew on is one click away rather than a claim.
+
+The grounding had to survive the format and the format fights it. A cited answer shows
+its working and the reader can look; speech goes past once and sounds equally confident
+whatever it says. So the filter is mechanical, in the same shape as `archivist.ask()`:
+every line must end with the passage it came from, a line citing nothing or citing a
+passage that was not sent is deleted before it is synthesised, and the count of what was
+deleted is reported rather than quietly shortening the show.
+
+No new retrieval. An entity's passages come from `entities.mentions_of()`, a project's
+topics from the shelf panel, and the archive's from the co-occurrence graph the cockpit
+already reduces.
+
+Two device facts shape the rest. It runs one inference at a time and caps a request near
+220 seconds, so the script is written one section per call and every spoken line is its
+own synthesis request, capped at 600 characters. Measured on a Tiiny Pocket the TTS runs
+at 1.64x realtime, so that cap is about 25 seconds of work against a 220 second ceiling,
+and the margin is there because the device is shared. Concatenation is the `wave` module
+rather than ffmpeg, because nothing here is allowed to run another program.
+
+Measured end to end on that device with the writing model on a separate box: five minutes
+of audio from forty lines in about 220 seconds, roughly 20 seconds of that writing and
+190 speaking.
+
 ### The entity index can tell a name from a word
 
 `Use`, `Related`, `Tech Details`, `Full`, `Run`, `Core`, `Live` and `Path` were all

@@ -103,7 +103,11 @@ def _schema(c):
     c.commit()
 
 
-HEADING = re.compile(r"^\s{0,3}#{1,6}\s", re.M)
+# A hash is not the only way people write a heading. "**Related:**" and
+# "Tech Details:" at the start of a line are the same gesture in markdown, and
+# the names that sit in them are section labels, not subjects.
+HEADING = re.compile(r"^\s{0,3}(?:#{1,6}\s|\*\*[^*\n]{1,40}\*\*\s*:?\s*$"
+                     r"|[A-Z][\w .'-]{0,38}:\s*$)", re.M)
 
 
 def _heading_spans(text):
@@ -205,6 +209,41 @@ def _fold_selftest():
     return "fold: 4/4"
 
 
+# A name written inside a URL, a path, an identifier or a backtick span is not
+# the English word. github.com and node_modules say nothing about how anyone
+# uses the word, and counting them makes a real name look like a common one.
+NOISE = re.compile(r"""https?://\S+ | www\.\S+
+                     | \b\S+\.(?:com|org|net|io|dev|app|ai|cc|sh|me)\b
+                     | [\w.-]*[/\\][\w./\\-]*
+                     | \b\w+_\w+\b | `[^`]*` | \$\w+""", re.X)
+WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
+CAP_FLOOR = 0.65
+
+
+def case_ratios(rows):
+    """How often each word is capitalised when it is used at all.
+
+    This is the signal that separates a name from a word. "Keelpin" is written
+    with a capital every time anyone mentions it, because that is its name.
+    "run" is written with a capital when it happens to open a sentence or a
+    bullet, and lowercase the other eight hundred times. Nothing else available
+    without a model tells those two apart: both are capitalised often, both are
+    in hundreds of notes, and both survive every structural filter.
+
+    Counted over prose only, because a name that also appears in URLs, paths and
+    identifiers would otherwise be punished for it. GitHub reads 0.57 against
+    raw text and 0.99 against prose, and the second number is the true one.
+    """
+    form = collections.Counter()
+    for r in rows:
+        for w in WORD.findall(NOISE.sub(" ", r["text"])):
+            form[w] += 1
+    anycase = collections.Counter()
+    for w, n in form.items():
+        anycase[w.lower()] += n
+    return form, anycase
+
+
 def build(min_docs=3):
     """Index every capitalised name in the archive. No model involved."""
     c = archive.db()
@@ -222,6 +261,17 @@ def build(min_docs=3):
             seen[name] += 1
             heads[name] += 1 if h else 0
     hits, seen, heads = fold_case(hits, seen, heads)
+    form, anycase = case_ratios(rows)
+
+    def always_capitalised(name):
+        """Multi-word names are judged on their least name-like word."""
+        parts = name.split()
+        rs = []
+        for w in parts:
+            t = anycase[w.lower()]
+            rs.append(form[w] / t if t else 1.0)
+        return min(rs) if rs else 1.0
+
     kept = 0
     # A name that titles notes in many unrelated projects is a section of the
     # author's own note template, not a subject. "Known Gotchas" titles 49 notes
@@ -236,6 +286,7 @@ def build(min_docs=3):
             template.add(t.lower())
     dropped_template = 0
     dropped_headings = 0
+    dropped_common = 0
     for name, ms in hits.items():
         docs = len({d for d, _ in ms})
         if docs < min_docs:
@@ -248,6 +299,9 @@ def build(min_docs=3):
         if seen[name] >= 4 and heads[name] / seen[name] > 0.6:
             dropped_headings += 1
             continue
+        if always_capitalised(name) < CAP_FLOOR:
+            dropped_common += 1
+            continue
         cur = c.execute(
             "INSERT INTO entity(name,kind,mentions,docs) VALUES(?,?,?,?)",
             (name, None, len(ms), docs))
@@ -258,7 +312,8 @@ def build(min_docs=3):
     c.commit()
     print(f"  {len(hits):,} candidates, {kept:,} kept (named in {min_docs}+ notes), "
           f"{dropped_template:,} dropped as note-template sections, "
-          f"{dropped_headings:,} as headings")
+          f"{dropped_headings:,} as headings, "
+          f"{dropped_common:,} as ordinary words that are merely capitalised")
     return 0
 
 

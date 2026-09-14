@@ -354,10 +354,6 @@ def ask_doc(c, doc_id, question):
             "scope": d["title"]}
 
 
-ASKING_ABOUT = re.compile(
-    r"^\s*(?:who|what)(?:'s|\s+is|\s+are|\s+was|\s+were)\s+(.{2,60}?)\s*\??$", re.I)
-
-
 def ask(c, question, focus=""):
     """Put the question to the archive, narrowed to an entity when one is in view.
 
@@ -373,18 +369,14 @@ def ask(c, question, focus=""):
     # back whichever notes happen to name him near matching words; what answers it
     # is every passage that names him at all. When the question is that shape and
     # the name is one the archive actually knows, take the mention path instead.
-    m = ASKING_ABOUT.match(question)
-    if m:
-        name = re.sub(r"^(?:the|a|an)\s+", "", m.group(1).strip(), flags=re.I)
-        row = c.execute("SELECT name FROM entity WHERE name=? COLLATE NOCASE "
-                        "AND docs >= 3", (name,)).fetchone()
-        if row:
-            import entities
-            d = entities.profile(row["name"])
-            if not d.get("error"):
-                return {"answer": d["answer"], "refused": False,
-                        "sources": d["sources"][:8], "cited": [],
-                        "via": f"named in {d['docs']} notes"}
+    import entities
+    named = entities.asked_about(question)
+    if named:
+        d = entities.profile(named)
+        if not d.get("error"):
+            return {"answer": d["answer"], "refused": False,
+                    "sources": d["sources"][:8], "cited": [],
+                    "via": f"named in {d['docs']} notes"}
 
     q = f"{focus}: {question}" if focus else question
     try:
@@ -727,8 +719,7 @@ def selfcheck():
           f"{d['total_edges']} co-occurrences")
 
     # the routing rule is the thing most likely to rot silently
-    assert ASKING_ABOUT.match("who is Richard").group(1) == "Richard"
-    assert ASKING_ABOUT.match("what did we decide about X") is None
+    print("  " + entities._routing_selftest())
     assert (STATIC / "cockpit.html").read_bytes().count(b"<title>") == 1
     print("  routing and page: ok")
 

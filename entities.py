@@ -17,6 +17,7 @@ model runs over the corpus. Inference is spent only on the question actually
 asked, over the mentions this index already found.
 """
 import collections
+import math
 import os
 import re
 import sqlite3
@@ -321,6 +322,84 @@ def build(min_docs=3):
     return 0
 
 
+TERM = re.compile(r"[a-z][a-z-]{3,}")
+DF_CEILING = 0.12
+
+
+def subjects(min_docs=3, keep=2500):
+    """Index what a reference library is *about*, which is not its proper nouns.
+
+    The capitalised-run extractor is right for a personal vault, where the things
+    worth asking about are named: Richard, Keelpin, ArgentOS. It is useless on a
+    survival library, where the things worth asking about are ordinary lowercase
+    nouns. "deadfall" appears in 180 chunks here and was never an entity, and
+    neither were tinder, snare or tourniquet. What the capitalised pass gives you
+    instead is United States, French and English, which nobody is going to ask.
+
+    A subject is a word a few documents are heavily about and the rest never use.
+    That is two signals multiplied: how many times it turns up in a document that
+    mentions it at all, and how few documents those are. Generic words fail the
+    first (people: 5 uses per document), common words fail the second (water: 547
+    documents). deadfall gets 18 uses across 10 documents and scores 117.
+
+    Stored alongside the names with kind='subject', so one lookup answers either
+    kind and the mention path works for both.
+    """
+    c = archive.db()
+    _schema(c)
+    rows = c.execute("SELECT id, doc_id, text FROM chunk").fetchall()
+    ndocs = c.execute("SELECT COUNT(*) n FROM doc").fetchone()["n"] or 1
+    print(f"  scanning {len(rows):,} chunks for subjects")
+
+    df = collections.defaultdict(set)        # term -> docs
+    tot = collections.Counter()              # term -> occurrences
+    where = collections.defaultdict(set)     # term -> chunks
+    for r in rows:
+        for w in set(TERM.findall(r["text"].lower())):
+            where[w].add(r["id"])
+        for w in TERM.findall(r["text"].lower()):
+            if w in STOP:
+                continue
+            df[w].add(r["doc_id"])
+            tot[w] += 1
+
+    ceiling = max(min_docs, int(ndocs * DF_CEILING))
+    scored = []
+    for w, docs in df.items():
+        n = len(docs)
+        if n < min_docs or n > ceiling:
+            continue
+        # "somethin" and "goin" are a dropped g, not a subject. Transcribed
+        # speech is bursty in exactly the way a real subject is, and the only
+        # honest tell is that the spelled-out word is right there in the corpus
+        # and commoner.
+        if w[-1] != "g" and len(df.get(w + "g", ())) > n:
+            continue
+        scored.append((tot[w] / n * math.log(ndocs / n), w, n, tot[w]))
+    scored.sort(reverse=True)
+    scored = scored[:keep]
+
+    c.execute("DELETE FROM mention WHERE entity_id IN "
+              "(SELECT id FROM entity WHERE kind='subject')")
+    c.execute("DELETE FROM entity WHERE kind='subject'")
+    for _, w, n, occ in scored:
+        cur = c.execute("INSERT INTO entity(name,kind,mentions,docs) VALUES(?,?,?,?)",
+                        (w, "subject", occ, n))
+        eid = cur.lastrowid
+        ch = sorted(where[w])
+        bydoc = {}
+        for cid in ch:
+            bydoc[cid] = None
+        c.executemany("INSERT INTO mention(entity_id,doc_id,chunk_id) "
+                      "SELECT ?, doc_id, id FROM chunk WHERE id=?",
+                      [(eid, cid) for cid in ch])
+    c.commit()
+    print(f"  {len(df):,} candidate terms, {len(scored):,} kept as subjects")
+    if scored:
+        print("  top: " + ", ".join(w for _, w, _, _ in scored[:12]))
+    return 0
+
+
 def top(n=25):
     c = archive.db()
     _schema(c)
@@ -331,17 +410,40 @@ def top(n=25):
 
 
 def mentions_of(c, name, limit=40):
-    """Every chunk naming this entity, best-connected notes first."""
+    """A sample of the passages naming this entity, spread across documents.
+
+    Spread matters more than it looks. A LIMIT with no ordering takes whichever
+    rows the join reaches first, which clusters by document: asking about a
+    deadfall returned twelve passages from one survival handbook and seven from
+    the book actually called Deadfalls and Snares. Taking a few from each source
+    in turn reads the same number of passages and covers six books instead of
+    leaning on one, which is the whole reason this path beats search.
+
+    Documents with more to say still get more of the budget, because the
+    round-robin keeps going while they still have passages left.
+    """
     row = c.execute("SELECT id,name,mentions,docs FROM entity WHERE name=? COLLATE NOCASE",
                     (name,)).fetchone()
     if not row:
         return None, []
     rs = c.execute(
-        "SELECT ch.text, d.title, d.source, ch.id "
+        "SELECT ch.text, d.title, d.source, ch.id, ch.doc_id "
         "FROM mention m JOIN chunk ch ON ch.id=m.chunk_id "
-        "JOIN doc d ON d.id=ch.doc_id WHERE m.entity_id=? LIMIT ?",
-        (row["id"], limit)).fetchall()
-    return row, rs
+        "JOIN doc d ON d.id=ch.doc_id WHERE m.entity_id=? ORDER BY ch.doc_id, ch.id",
+        (row["id"],)).fetchall()
+    bydoc = collections.OrderedDict()
+    for r in rs:
+        bydoc.setdefault(r["doc_id"], []).append(r)
+    out = []
+    while len(out) < limit and bydoc:
+        for k in list(bydoc):
+            if not bydoc[k]:
+                del bydoc[k]
+                continue
+            out.append(bydoc[k].pop(0))
+            if len(out) >= limit:
+                break
+    return row, out
 
 
 def profile(name, limit=30):
@@ -392,6 +494,44 @@ def profile(name, limit=30):
             "answer": (d["choices"][0]["message"].get("content") or "").strip()}
 
 
+ASKING_ABOUT = re.compile(
+    r"^\s*(?:who|what)(?:'s|\s+is|\s+are|\s+was|\s+were)\s+(.{2,60}?)\s*\??$", re.I)
+
+
+def asked_about(question, min_docs=3):
+    """The indexed name a question is about, if it is about one at all.
+
+    "who is Richard" and "what is a deadfall" are not retrieval questions.
+    Nearest-neighbour search hands back the passages most like the question; for
+    a name or a subject, what answers it is every passage that mentions it, which
+    is a completely different set. This is the test for which kind of question
+    just arrived.
+
+    Deliberately narrow. "what did we decide about Turnstile" stays on retrieval,
+    because it is a question about an event and not a request for a definition.
+    """
+    m = ASKING_ABOUT.match(question or "")
+    if not m:
+        return None
+    name = re.sub(r"^(?:the|a|an)\s+", "", m.group(1).strip(), flags=re.I)
+    c = archive.db()
+    _schema(c)
+    row = c.execute("SELECT name FROM entity WHERE name=? COLLATE NOCASE AND docs >= ?",
+                    (name, min_docs)).fetchone()
+    return row["name"] if row else None
+
+
+def _routing_selftest():
+    ok = lambda q, want: ASKING_ABOUT.match(q) and \
+        re.sub(r"^(?:the|a|an)\s+", "", ASKING_ABOUT.match(q).group(1).strip(), flags=re.I) == want
+    assert ok("who is Richard", "Richard")
+    assert ok("What is a deadfall?", "deadfall")
+    assert ok("what's HoLaCe", "HoLaCe")
+    assert ASKING_ABOUT.match("what did we decide about Turnstile") is None
+    assert ASKING_ABOUT.match("who should own the deploy step") is None
+    return "routing: 5/5"
+
+
 def who(name, limit=30):
     d = profile(name, limit)
     if d.get("error"):
@@ -412,6 +552,9 @@ if __name__ == "__main__":
         sys.exit(build(int(sys.argv[2]) if len(sys.argv) > 2 else 3))
     if cmd == "who":
         sys.exit(who(" ".join(sys.argv[2:])))
+    if cmd == "subjects":
+        sys.exit(subjects(int(sys.argv[2]) if len(sys.argv) > 2 else 3))
     if cmd == "top":
         sys.exit(top(int(sys.argv[2]) if len(sys.argv) > 2 else 25))
-    sys.exit("usage: entities.py build [min_docs] | top [n] | who <name>")
+    sys.exit("usage: entities.py build [min_docs] | subjects [min_docs] "
+             "| top [n] | who <name>")

@@ -308,6 +308,29 @@ def ask(question, show_sources=True, quiet=False):
     sources, so a caller that is not a terminal can show its own working."""
     c = archive.db()
     _schema(c)
+
+    # "what is a deadfall" is not a retrieval question. Search returns the
+    # passages most like the words in it; what answers it is every passage that
+    # mentions a deadfall, which in a trapping library is a different and far
+    # better set. Only fires when the archive actually knows the name.
+    try:
+        import entities
+        named = entities.asked_about(question)
+    except Exception:  # noqa: BLE001
+        named = None
+    if named:
+        d = entities.profile(named)
+        if not d.get("error"):
+            if not quiet:
+                print(f"\n  {d['answer']}\n")
+                print(f"  read every mention: {d['docs']} documents, {d['mentions']} times")
+                if show_sources:
+                    print("  drawn from")
+                    for t in d["sources"][:8]:
+                        print(f"    {t}")
+            return {"answer": d["answer"], "refused": False, "cited": [],
+                    "sources": d["sources"][:8], "via": f"{d['docs']} documents"}
+
     hits = search(c, question)
     if not hits or hits[0]["sim"] < MIN_SIM:
         # Nothing retrieved is close enough to be about this. Refuse here, before

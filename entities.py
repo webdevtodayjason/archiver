@@ -419,8 +419,9 @@ def mentions_of(c, name, limit=40):
     in turn reads the same number of passages and covers six books instead of
     leaning on one, which is the whole reason this path beats search.
 
-    Documents with more to say still get more of the budget, because the
-    round-robin keeps going while they still have passages left.
+    Documents with more to say are also visited first and keep more of the
+    budget, because the round-robin returns to them while they still have
+    passages left.
     """
     row = c.execute("SELECT id,name,mentions,docs FROM entity WHERE name=? COLLATE NOCASE",
                     (name,)).fetchone()
@@ -434,6 +435,14 @@ def mentions_of(c, name, limit=40):
     bydoc = collections.OrderedDict()
     for r in rs:
         bydoc.setdefault(r["doc_id"], []).append(r)
+    # Round-robin alone is not enough. Taking documents in the order the join
+    # returns them means insertion order, so a name in 194 notes was answered
+    # from the 194 oldest, every time, and a project that got busy last month
+    # never reached the model. Order by how much each document actually says
+    # about the name, so the notes that discuss it arrive before the ones that
+    # mention it once in passing.
+    bydoc = collections.OrderedDict(
+        sorted(bydoc.items(), key=lambda kv: (-len(kv[1]), kv[0])))
     out = []
     while len(out) < limit and bydoc:
         for k in list(bydoc):

@@ -373,16 +373,35 @@ def ask(question, show_sources=True, quiet=False):
                 {"role": "user",
                  "content": f"PASSAGES FROM THE VAULT:\n\n{passages}\n\n"
                             f"QUESTION: {question}"}]}
+    import re
+
+    def _guard(text):
+        cited = {int(n) for n in re.findall(r"\[(\d+)\]", text)}
+        valid = cited & set(range(1, len(top) + 1))
+        return cited, valid, text.startswith(REFUSAL[:20])
+
     d = api("/v1/chat/completions", body, timeout=420, base=base, key=key)
     answer = (d["choices"][0]["message"].get("content") or "").strip()
+    cited, valid, refused = _guard(answer)
 
     # The mechanical guard. An instruction to cite can be ignored silently and
     # the result looks exactly like a good answer, so the citations are checked
-    # rather than trusted.
-    import re
-    cited = {int(n) for n in re.findall(r"\[(\d+)\]", answer)}
-    valid = cited & set(range(1, len(top) + 1))
-    refused = answer.startswith(REFUSAL[:20])
+    # rather than trusted. Measured on the 8B with the snake bite question: the
+    # passages were right and the answer was right and two runs in three
+    # carried no [n] at all, so the guard threw the answer away. One more ask,
+    # quoting the complaint, before the refusal; a second miss is refused.
+    if not refused and not valid and answer:
+        body["messages"] += [
+            {"role": "assistant", "content": answer},
+            {"role": "user", "content":
+                "That answer cites no passage, so it cannot be used. Every "
+                "sentence that states a fact must end with the number of the "
+                "passage it came from in square brackets, like [2]. Answer the "
+                "same question again from the same passages with those "
+                f"citations, or say exactly: {REFUSAL}"}]
+        d = api("/v1/chat/completions", body, timeout=420, base=base, key=key)
+        answer = (d["choices"][0]["message"].get("content") or "").strip()
+        cited, valid, refused = _guard(answer)
     if not refused and not valid:
         answer = (REFUSAL + "\n  (an answer was produced but cited no passage, "
                   "so it was withheld)")
@@ -557,5 +576,61 @@ def main():
     return 0
 
 
+
+def _selfcheck():
+    """The citation retry, with the vault and the model both faked.
+
+    Fails if a first answer with no [n] is not asked again, if the second
+    answer is not kept, or if two misses do not end in the refusal.
+    """
+    global api, search, pick_chat
+    import tempfile
+    real_api, real_search, real_pick = api, search, pick_chat
+    real_home = os.environ.get("ARCHIVER_HOME")
+    # A temp corpus and no device: this must pass on a machine with neither.
+    os.environ["ARCHIVER_HOME"] = tempfile.mkdtemp(prefix="archivist-selfcheck-")
+    hits = [{"sim": 0.9, "text": "Keep the bitten limb still and below the heart.",
+             "title": "SAS Survival Handbook", "source": "shelf", "page_from": 439,
+             "page_to": 440, "doc_id": 1, "path": "x", "chunk_id": 1}] * 3
+    calls = []
+
+    def fake_search(c, q):
+        return list(hits)
+
+    def scripted(*answers):
+        queue = list(answers)
+
+        def fake_api(path, body, timeout=300, base=None, key=None):
+            calls.append(body["messages"][-1]["content"][:60])
+            return {"choices": [{"message": {"content": queue.pop(0)}}]}
+        return fake_api
+    try:
+        search = fake_search
+        pick_chat = lambda: ("fake-model", None, "k")  # noqa: E731
+        api = scripted("Keep the limb still and low.", "Keep the limb still and low [1].")
+        r = ask("snake bite", quiet=True, show_sources=False)
+        assert not r["refused"] and r["cited"] == [1], r
+        assert len(calls) == 2 and calls[1].startswith("That answer cites no passage"), calls
+        calls.clear()
+        api = scripted("No citation here.", "Still no citation.")
+        r = ask("snake bite", quiet=True, show_sources=False)
+        assert r["refused"] and "withheld" in r["answer"], r
+        assert len(calls) == 2, calls
+        calls.clear()
+        api = scripted("Keep it still [1].")
+        r = ask("snake bite", quiet=True, show_sources=False)
+        assert not r["refused"] and len(calls) == 1, (r, calls)
+        print("  selfcheck ok: citation retry asks once, keeps a cited second answer, "
+              "refuses two misses")
+    finally:
+        api, search, pick_chat = real_api, real_search, real_pick
+        if real_home is None:
+            os.environ.pop("ARCHIVER_HOME", None)
+        else:
+            os.environ["ARCHIVER_HOME"] = real_home
+
 if __name__ == "__main__":
+    if "--selfcheck" in sys.argv:
+        _selfcheck()
+        sys.exit(0)
     sys.exit(main() or 0)

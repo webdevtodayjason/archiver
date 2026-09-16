@@ -28,6 +28,7 @@ import re
 import sqlite3
 import struct
 import sys
+import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -739,6 +740,41 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def send_response(self, code, message=None):  # noqa: N802
+        # Remembered so the guard below knows whether a reply is already going
+        # out. Half a response plus a 500 is worse than half a response.
+        self._answered = True
+        BaseHTTPRequestHandler.send_response(self, code, message)
+
+    def _guard(self, handle):
+        """The one place a handler that raises turns into an answer.
+
+        Without this an exception reaches socketserver, which prints it and
+        closes the connection having written nothing. The browser calls that
+        ERR_EMPTY_RESPONSE and the page shows "Failed to fetch", which names
+        neither the route nor the cause. That is how a missing table went
+        unnoticed through two releases. A 500 carrying the exception puts the
+        reason in the network tab, and the traceback still goes to farm.log.
+        """
+        self._answered = False
+        try:
+            return handle()
+        except Exception as e:  # noqa: BLE001 - every route, deliberately
+            traceback.print_exc()
+            sys.stderr.flush()
+            if self._answered:
+                return None
+            try:
+                return self._json({"error": f"{type(e).__name__}: {e}"[:400]}, 500)
+            except Exception:  # noqa: BLE001 - the socket is gone; nothing to do
+                return None
+
+    def do_GET(self):  # noqa: N802
+        return self._guard(self._get)
+
+    def do_POST(self):  # noqa: N802
+        return self._guard(self._post)
+
     def _send(self, code, body, ctype):
         if isinstance(body, str):
             body = body.encode()
@@ -786,9 +822,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(blob)
 
-    def do_GET(self):  # noqa: N802
+    def _get(self):
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
+        if u.path == "/favicon.ico":
+            # The page carries its own mark inline. This is for the browser that
+            # asks anyway, so the console stays clean enough that a real error
+            # in it means something.
+            self.send_response(204)
+            self.end_headers()
+            return None
         c = _db()
         if u.path == "/":
             return self._send(200, (STATIC / "cockpit.html").read_bytes(),
@@ -828,7 +871,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._audio(p)
         return self._send(404, "no such path", "text/plain")
 
-    def do_POST(self):  # noqa: N802
+    def _post(self):
         u = urllib.parse.urlparse(self.path)
         n = int(self.headers.get("Content-Length") or 0)
         try:

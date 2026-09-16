@@ -10,3 +10,4 @@ __pycache__/
 # Agent worktrees are transient workspaces, not content. git add -A picks them
 # up as embedded repos and commits a gitlink that no clone can resolve.
 .claude/worktrees/
+dist/

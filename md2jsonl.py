@@ -70,12 +70,27 @@ def records(root, min_chars=200):
         if len(body) < min_chars:
             yield None, rel
             continue
+        shelf = shelf_of(rel)
+        # A note called "01 - Current State" says nothing about itself; the
+        # folder it sits in is the whole subject. Both were recorded as
+        # metadata and neither reached the text, so the only copy of the
+        # word "Grimoire" in the Grimoire note was its own directory entry,
+        # and the entity index -- which reads prose -- could not see it.
+        #
+        # It has to be a sentence, not a "Folder - Title" header line. The
+        # extractor deliberately ignores a lone capitalised word that opens
+        # a line, because that is how every sentence starts and the noise
+        # would swamp it. Mid-sentence is where a name is legible as a name.
+        # The title is left out on purpose: it would put "Current State" in
+        # 2,385 notes and mint the largest junk entity in the corpus.
+        if shelf != "(root)":
+            body = f"This note belongs to the {shelf} project.\n\n{body}"
         yield {
             "title": md.stem,
             # as_posix, so the key a note is filed under does not depend on
             # which operating system read the folder.
             "path": rel.as_posix(),
-            "shelf": shelf_of(rel),
+            "shelf": shelf,
             "text": body,
         }, rel
 

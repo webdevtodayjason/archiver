@@ -1005,6 +1005,20 @@ def selfcheck():
     assert chunks > 0, "chunker produced nothing"
     print(f"  ingest: {docs} notes -> {chunks} chunks")
 
+    # Edit one note and ingest the same file again: the text changes in place,
+    # the count does not, and nothing else is touched.
+    lines = open(notes).read().splitlines()
+    rec = json.loads(lines[0])
+    rec["text"] += " Keelpin moved to a new rack in the spring."
+    lines[0] = json.dumps(rec)
+    open(notes, "w").write("\n".join(lines) + "\n")
+    archive.add_text([notes], source="selfcheck")
+    assert c.execute("SELECT COUNT(*) n FROM doc").fetchone()["n"] == 9
+    got = c.execute("SELECT p.text FROM page p JOIN doc d ON d.id=p.doc_id "
+                    "WHERE d.title='Note 0'").fetchone()["text"]
+    assert got.endswith("in the spring."), got[-60:]
+    print("  re-ingest: the edited note was replaced in place, still 9 notes")
+
     entities.build(min_docs=3)
     names = {r["name"] for r in c.execute("SELECT name FROM entity")}
     assert "Keelpin" in names and "Richard" in names, sorted(names)[:20]

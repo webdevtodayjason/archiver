@@ -145,12 +145,27 @@ def norm(v):
     return [x / n for x in v]
 
 
+def _embed_text(r):
+    """What actually goes to the embedder: the passage under the name of the
+    thing it came from.
+
+    A passage on its own has no idea what document it is in, and page 4 of a
+    note says "the engine decides, the model narrates" without ever repeating
+    the title. Searching for the subject then ranks a chapter that happens to
+    use similar words above the document actually about it. The header is
+    embedded but not stored, so retrieval sees the provenance and the answer
+    still quotes only what the page says."""
+    head = " \u00b7 ".join(x for x in (r["source"], r["title"]) if x)
+    return (f"{head}\n\n{r['text']}" if head else r["text"])[:2000]
+
+
 def index(batch=16, limit=None):
     """Embed chunks that have no vector yet. Resumable: it only ever does the
     ones that are missing, so an interrupted index costs one batch."""
     c = archive.db()
     _schema(c)
-    q = ("SELECT ch.id, ch.text FROM chunk ch LEFT JOIN vec v ON v.chunk_id=ch.id "
+    q = ("SELECT ch.id, ch.text, d.title, d.source FROM chunk ch "
+         "LEFT JOIN vec v ON v.chunk_id=ch.id JOIN doc d ON d.id=ch.doc_id "
          "WHERE v.chunk_id IS NULL ORDER BY ch.id")
     if limit:
         q += f" LIMIT {int(limit)}"
@@ -165,7 +180,7 @@ def index(batch=16, limit=None):
     for i in range(0, len(todo), batch):
         part = todo[i:i + batch]
         try:
-            vecs = embed([r["text"][:2000] for r in part])
+            vecs = embed([_embed_text(r) for r in part])
         except Exception as exc:  # noqa: BLE001
             print(f"  batch failed ({str(exc)[:70]}), stopping; rerun to continue")
             break

@@ -369,7 +369,7 @@ def add_text(jsonl_paths, source=None):
         files += sorted(pp.rglob("*.jsonl")) if pp.is_dir() else [pp]
     if not files:
         sys.exit("no .jsonl shelves found there")
-    new = skipped = empty = 0
+    new = changed = skipped = empty = 0
     for f in files:
         for line in f.open(encoding="utf-8"):
             line = line.strip()
@@ -396,7 +396,23 @@ def add_text(jsonl_paths, source=None):
                     (key, title[:200], str(shelf)[:120], 1,
                      hashlib.sha1(key.encode()).hexdigest()[:16], now()))
             except sqlite3.IntegrityError:
-                skipped += 1
+                # Same path, later run. A note that changed since is taken in
+                # place and re-chunked on its own, so `index` embeds only its
+                # chunks; one that did not is what "already present" means.
+                row = c.execute(
+                    "SELECT d.id, p.text FROM doc d LEFT JOIN page p "
+                    "ON p.doc_id=d.id AND p.page_no=1 WHERE d.path=?", (key,)).fetchone()
+                if row["text"] == text:
+                    skipped += 1
+                    continue
+                c.execute("DELETE FROM page WHERE doc_id=? AND page_no=1", (row["id"],))
+                c.execute("INSERT INTO page(doc_id,page_no,status,engine,conf,chars,text,done_at) "
+                          "VALUES(?,1,'text','zim-html',1.0,?,?,?)",
+                          (row["id"], len(text), text, now()))
+                c.execute("UPDATE doc SET title=?,source=? WHERE id=?",
+                          (title[:200], str(shelf)[:120], row["id"]))
+                chunk_doc(c, row["id"])
+                changed += 1
                 continue
             c.execute("INSERT INTO page(doc_id,page_no,status,engine,conf,chars,text,done_at) "
                       "VALUES(?,1,'text','zim-html',1.0,?,?,?)",
@@ -404,7 +420,7 @@ def add_text(jsonl_paths, source=None):
             new += 1
         c.commit()
         print(f"  {f.name}: {new:,} articles in")
-    print(f"  {new:,} added, {skipped:,} already present, {empty:,} empty")
+    print(f"  {new:,} added, {changed:,} changed, {skipped:,} already present, {empty:,} empty")
     return 0
 
 
@@ -622,6 +638,12 @@ def chunk_doc(c, doc_id):
     pages = c.execute(
         "SELECT page_no,text FROM page WHERE doc_id=? AND status IN ('text','ocr') "
         "AND chars>0 ORDER BY page_no", (doc_id,)).fetchall()
+    # Its old vectors go with its old chunks: a freed rowid at the top of the
+    # table is handed to the next chunk, and a vector left behind would then
+    # describe text it was never computed from.
+    if c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vec'").fetchone():
+        c.execute("DELETE FROM vec WHERE chunk_id IN (SELECT id FROM chunk WHERE doc_id=?)",
+                  (doc_id,))
     c.execute("DELETE FROM chunk WHERE doc_id=?", (doc_id,))
     buf, first, last, made = "", None, None, 0
     for p in pages:

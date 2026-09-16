@@ -104,8 +104,8 @@ CREATE INDEX IF NOT EXISTS mention_doc ON mention(doc_id);
 
 
 def _schema(c):
-    c.executescript(SCHEMA)
-    c.commit()
+    """Every table, not only this module's two. See archive.ensure_schema()."""
+    archive.ensure_schema(c)
 
 
 # A hash is not the only way people write a heading. "**Related:**" and

@@ -40,7 +40,27 @@ import time
 
 
 HERE = pathlib.Path(__file__).resolve().parent
-HOME = pathlib.Path(os.environ.get("ARCHIVER_HOME", HERE / "corpus"))
+
+
+def _home():
+    """Where the corpus lives.
+
+    ARCHIVER_HOME first, because a person naming a folder means it. Then the
+    data directory the Tiiny App Farm hands every app it starts: the farm
+    unpacks each version into its own folder and throws that folder away on the
+    next update, so a corpus written beside the code does not survive an
+    upgrade, while the data directory sits beside the version folders and does.
+    A plain checkout sets neither and keeps its corpus next to the code, which
+    is what every existing install already does.
+    """
+    named = os.environ.get("ARCHIVER_HOME")
+    if named:
+        return pathlib.Path(named)
+    farm = os.environ.get("FARM_DATA_DIR") or os.environ.get("TIINY_DATA_DIR")
+    return pathlib.Path(farm) / "corpus" if farm else HERE / "corpus"
+
+
+HOME = _home()
 DB = HOME / "archive.db"
 PAGES = HOME / "pages"
 
@@ -88,12 +108,32 @@ CREATE INDEX IF NOT EXISTS chunk_doc ON chunk(doc_id);
 """
 
 
+def ensure_schema(c):
+    """Every table this app owns, on one connection, from one place.
+
+    Three modules each carried their own CREATE statements and each ran them the
+    first time that module did any work, so a database was complete only once
+    all three had run. The cockpit reads all three and runs none of them. On a
+    fresh install it asked `entity` for a count before anything had built an
+    entity index, sqlite raised "no such table: entity", and the request handler
+    dropped the socket without writing a byte, which the browser reported as
+    ERR_EMPTY_RESPONSE. Creating the lot every time a connection opens costs one
+    cheap no-op per open and makes that class of failure impossible.
+
+    The two imports are deferred because both of those modules import this one.
+    """
+    import archivist
+    import entities
+    c.executescript(SCHEMA + archivist.SCHEMA + entities.SCHEMA)
+    c.commit()
+
+
 def db():
     HOME.mkdir(parents=True, exist_ok=True)
     PAGES.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB, timeout=60)
     c.row_factory = sqlite3.Row
-    c.executescript(SCHEMA)
+    ensure_schema(c)
     # Several machines can share one corpus over the network; WAL plus a busy
     # timeout is all the coordination the shard scheme needs.
     c.execute("PRAGMA journal_mode=WAL")

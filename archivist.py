@@ -107,16 +107,21 @@ def api(path, body, timeout=300, base=None, key=None):
 
 
 # ------------------------------------------------------------------ index
-def _schema(c):
-    """The vector table, kept beside the chunks rather than in its own store.
+# The vector table, kept beside the chunks rather than in its own store. One
+# file to copy and one file to lose. A vault that needs a second service running
+# to answer anything is not a vault.
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS vec (
+  chunk_id INTEGER PRIMARY KEY REFERENCES chunk(id),
+  dim INTEGER NOT NULL,
+  v BLOB NOT NULL
+);
+"""
 
-    One file to copy and one file to lose. A vault that needs a second service
-    running to answer anything is not a vault."""
-    c.execute("""CREATE TABLE IF NOT EXISTS vec (
-                   chunk_id INTEGER PRIMARY KEY REFERENCES chunk(id),
-                   dim INTEGER NOT NULL,
-                   v BLOB NOT NULL)""")
-    c.commit()
+
+def _schema(c):
+    """Every table, not only this module's one. See archive.ensure_schema()."""
+    archive.ensure_schema(c)
 
 
 def embed(texts):

@@ -4,6 +4,67 @@ Dates are when the work landed, not when it was tagged.
 
 ## Unreleased
 
+## 0.1.2
+
+### A fresh install could not answer its own first two questions
+
+Installed through the farm onto a Mac that had never run it, the page came up
+and then sat there: every number in the top strip a dash, and in the console two
+requests, to `/api/vitals` and `/api/settings`, that had returned nothing at
+all. ERR_EMPTY_RESPONSE, then `TypeError: Failed to fetch`.
+
+Nothing was wrong with the network. Both routes count rows in `entity`, and on a
+database nobody had ever built an entity index in, that table did not exist.
+sqlite raised, the exception went past the request handler into socketserver,
+and socketserver's answer to a handler that raises is to print it and close the
+connection having written nothing. A browser has no way to show that except as a
+fetch that failed, so the page said nothing and the reason sat in farm.log.
+
+Two faults, so two fixes.
+
+The schema was spread across three modules, each creating its own tables the
+first time that module did any work. archive.py made `doc`, `page` and `chunk`,
+archivist.py made `vec` the first time anything was embedded, entities.py made
+`entity` and `mention` the first time an extraction ran. A database was complete
+only once all three had run, and the cockpit runs none of them, it only reads.
+`archive.ensure_schema()` now creates the lot on every connection and the other
+two modules call it instead of carrying their own half, so a fresh database and
+a database left half built by 0.1.1 both come out complete.
+
+And every route answers now. One try/except around the GET and POST dispatch
+turns an exception into a 500 carrying its type and message, while the traceback
+still goes to farm.log. A dropped socket tells nobody anything; a 500 in the
+network tab names the route and the reason, which is the difference between this
+taking two releases to notice and taking one page load.
+
+### The corpus moves to the folder the farm keeps
+
+The archive lived next to the code, in `corpus/` inside the install folder. The
+farm unpacks each version into a folder of its own and throws the old one away
+when it updates, so an index built under 0.1.1 would not have survived the
+upgrade to 0.1.2. The farm hands every app a data directory that sits beside
+those version folders for exactly this reason, so `FARM_DATA_DIR` is used when
+it is set. `ARCHIVER_HOME` still wins over it, and a plain checkout with neither
+set keeps its corpus next to the code, as it always did.
+
+The notes were never at risk. They are markdown files in your own folder and
+always have been, and the vault setting lives in `~/.config/tiiny-brain.json`.
+What was at risk is the index over them, which is minutes of rebuilding rather
+than anything lost.
+
+### Also
+
+- `/favicon.ico` answers 204, and the page carries its own mark inline, so the
+  console no longer opens with a 404 that means nothing.
+- `tests/test_fresh_install.py` opens a fresh database, starts the cockpit in a
+  thread against an empty data directory, and asks it the two questions that
+  failed. Standard library only and no subprocess, the same rule the shipped
+  tree keeps.
+- `ci.yml` runs those tests and the selfcheck on Linux, macOS and Windows.
+  Windows had never been tested at all before this.
+- `scripts/build-release.py` writes the release tarball from a file list that is
+  written down now rather than remembered.
+
 ## 0.1.1
 
 - The cockpit reads TIINYAPP_PORT when no port is given, so `farm start tiiny-brain --port N` moves it.

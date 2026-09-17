@@ -89,6 +89,45 @@ Answers cite the book and the page. If the passages do not support an answer it 
 rather than filling the gap, which is the only behaviour worth having in a vault someone
 consults when they cannot look anything up.
 
+## LAST LIGHT
+
+The library half, with its own first screen. One question box, an answer that names the
+book and the page, and an unmistakable refusal when the shelf does not cover it, on a box
+with no internet, read one-handed on a phone joined to the Tiiny's own network.
+
+```bash
+ARCHIVER_HOME=~/lastlight/corpus python3 lastlight.py     # open http://<the box>:8700/
+python3 lastlight.py --selfcheck                          # offline, no device, no corpus
+```
+
+| route | what comes back |
+|---|---|
+| `GET /` | `static/lastlight.html`, one file, system fonts, nothing fetched off the box |
+| `GET /api/health` | `corpus` counts, the `shelves`, and whether the device is answering |
+| `POST /api/ask` | exactly what `archivist.ask()` returned, plus the question and the seconds |
+| `GET /api/shelves` | every shelf with its document and page count |
+| `GET /api/books?shelf=` | the whole shelf in title order |
+| `GET /api/subjects?shelf=&limit=` | the subject index, strongest first |
+| `GET /api/subject?name=` | what `entities.profile()` returned |
+
+**It serves 8700 and binds every interface.** The cockpit is a desk tool and binds
+loopback; this is opened on a phone that is not this machine, so a loopback bind would
+make the whole product unreachable. The device has no route off its own network for the
+wide bind to be wide on.
+
+**Nothing on the way out is normalised.** `archivist.ask()` returns three different
+shapes, and which one arrived is the most useful thing on the reply: an answer off the
+entity path carries `via` and no citations, the similarity floor carries `hits` and no
+sources, the model carries `cited` and the model name. The cockpit flattens all three with
+`or []` because its rail only ever draws one of them. Here every key comes through under
+its own name and the page decides what to show, because "it read every mention of this
+across ten books" and "it answered from six passages" are different answers and a person
+in trouble is owed the difference.
+
+**An unreachable device is found before the model call, not during it.** The failure
+otherwise is a urllib timeout inside a 420 second request, and the person spends all of it
+holding a spinner. Browsing keeps working while the box is off; only answering does not.
+
 ## Your own notes
 
 The same machinery points at a folder of markdown just as well as a shelf of PDFs.

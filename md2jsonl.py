@@ -35,31 +35,61 @@ def clean(text):
     return text.strip()
 
 
-def convert(root, out_path, min_chars=200):
+def shelf_of(rel):
+    """Top folder, or "(root)" for loose notes at the top level.
+
+    Takes a relative PurePath so the same note gives the same project name
+    whichever machine walked the folder. A Windows walk hands back
+    ``Projects\\note.md`` and a Mac walk ``Projects/note.md``; both are
+    ``Projects``.
+    """
+    return rel.parts[0] if len(rel.parts) > 1 else "(root)"
+
+
+def records(root, min_chars=200):
+    """Walk a folder of markdown and yield one record per note.
+
+    The one place the walk lives. md2jsonl writes these to a JSONL file for the
+    command line; the cockpit's loader reads the same generator straight into
+    the archive, so the button and the command see the same notes, the same
+    projects and the same titles.
+
+    Yields (record, rel) where rel is the note's path under root. A record that
+    is too short to be worth embedding is counted rather than yielded, and comes
+    back as the second half of the ``too_short`` pair.
+    """
     root = pathlib.Path(root).expanduser()
+    for md in sorted(root.rglob("*.md")):
+        if any(part in SKIP_DIRS for part in md.parts):
+            continue
+        try:
+            body = clean(md.read_text(encoding="utf-8", errors="replace"))
+        except Exception:  # noqa: BLE001
+            continue
+        rel = md.relative_to(root)
+        if len(body) < min_chars:
+            yield None, rel
+            continue
+        yield {
+            "title": md.stem,
+            # as_posix, so the key a note is filed under does not depend on
+            # which operating system read the folder.
+            "path": rel.as_posix(),
+            "shelf": shelf_of(rel),
+            "text": body,
+        }, rel
+
+
+def convert(root, out_path, min_chars=200):
     out = pathlib.Path(out_path).expanduser()
     out.parent.mkdir(parents=True, exist_ok=True)
     kept = short = 0
     with out.open("w", encoding="utf-8") as fh:
-        for md in sorted(root.rglob("*.md")):
-            if any(part in SKIP_DIRS for part in md.parts):
-                continue
-            try:
-                body = clean(md.read_text(encoding="utf-8", errors="replace"))
-            except Exception:  # noqa: BLE001
-                continue
-            if len(body) < min_chars:
+        for rec, _rel in records(root, min_chars):
+            if rec is None:
                 short += 1
                 continue
-            rel = md.relative_to(root)
-            # Top folder, or "(root)" for loose notes at the top level.
-            shelf = rel.parts[0] if len(rel.parts) > 1 else "(root)"
-            fh.write(json.dumps({
-                "title": md.stem,
-                "path": str(rel),
-                "shelf": shelf,
-                "text": body,
-            }, ensure_ascii=False) + "\n")
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
             kept += 1
     return kept, short, out
 

@@ -33,6 +33,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import archive
+import ingest
 import overview
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -589,6 +590,27 @@ def set_vault(path):
     return {"ok": True, "vault": str(d)}
 
 
+def load_notes(path):
+    """Point the brain at a folder of markdown and start reading it.
+
+    The folder is remembered as the vault, because the folder you load from is
+    the folder a new note should land in. Anything else means the button and the
+    writer disagree about where your notes are, and a person has to hold two
+    answers to one question.
+    """
+    p = (path or "").strip()
+    if not p:
+        return {"error": "choose a folder first"}, 400
+    root = ingest.expand(p)
+    if not root.is_dir():
+        return {"error": f"{root} is not a folder on this machine"}, 400
+    set_vault(str(root))
+    d = ingest.start(str(root))
+    # 409 rather than an error field: the page polls this, and "already running"
+    # is the ordinary answer to a second click, not a fault worth showing.
+    return d, (409 if d.get("busy") else 200)
+
+
 def new_note(c, title, text, shelf=""):
     """Write a note to disk, then bring just that note into the archive."""
     import archivist
@@ -832,10 +854,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(204)
             self.end_headers()
             return None
-        c = _db()
         if u.path == "/":
             return self._send(200, (STATIC / "cockpit.html").read_bytes(),
                               "text/html; charset=utf-8")
+        # Answered before the database is opened, and deliberately. Rebuilding
+        # the name index holds a write transaction, and opening a connection
+        # runs the schema script, so during the last step of a load every route
+        # that opens one waits on it. These two are the ones the page polls
+        # while that is happening, and a progress bar that stops moving during
+        # the slowest step is the same as no progress bar.
+        if u.path == "/api/folders":
+            return self._json(ingest.folders((q.get("path") or [""])[0]))
+        if u.path == "/api/ingest":
+            return self._json(ingest.state())
+        c = _db()
         if u.path == "/api/vitals":
             return self._json(vitals(c))
         if u.path == "/api/graph":
@@ -884,6 +916,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(r, 200 if r.get("ok") else 400)
         if u.path == "/api/vault":
             return self._json(set_vault(body.get("path") or ""))
+        if u.path == "/api/ingest":
+            return self._json(*load_notes(body.get("path") or ""))
         if u.path == "/api/settings":
             import archivist
             changed = {}

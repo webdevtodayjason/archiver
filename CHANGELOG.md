@@ -4,6 +4,89 @@ Dates are when the work landed, not when it was tagged.
 
 ## Unreleased
 
+## 0.1.3
+
+### There was no way to load notes without a terminal
+
+Started from the launcher on a machine that had never run it, Tiiny Brain came
+up with an empty board and no way to point it anywhere. Loading notes was five
+commands in one order: `md2jsonl.py`, `add-text`, `chunk`, `index`, then
+`entities.py build`. Every one of them lives behind a shell prompt, and the
+people this is built for do not open one. An empty board with nothing on it that
+says how to fill it reads as a broken tool rather than an empty one.
+
+The five commands are unchanged and still do what they did. What is new is that
+all of them are reachable from the page.
+
+The empty board now carries the door: "No notes yet. Point Tiiny Brain at a
+folder of markdown", and a button. The same button is in the top bar, and the
+same door is under Settings beside the vault folder. It takes a folder path,
+with a folder browser served from this machine because the notes are already on
+this machine and a browser upload would only make copies of them. `~/Documents`,
+`~/Desktop`, an Obsidian vault and the iCloud Obsidian folder are offered as
+shortcuts when they exist. The folder is remembered as the vault, so the folder
+you load from is the folder a new note lands in.
+
+One press runs the whole pipeline in a background thread: the walk, the filing,
+the chunking, the embedding on the Tiiny, the name index. The page polls
+`/api/ingest` and shows which of the five steps it is on and how far through.
+The board redraws itself when it finishes.
+
+Loading the same folder again is cheap. A note is filed under a hash of its
+text, so an unchanged note is skipped before it is read any further and only new
+or changed notes are chunked and embedded. A note edited on disk is re-read in
+place, keeping its id, and its old vectors go with its old chunks.
+`archive.chunk_all()` is deliberately not used: it empties the chunk table and
+every vector with it, which is right for a rebuild and would cost a full
+re-embed for one new note.
+
+### Every step that cannot run says which step, and keeps what came before
+
+A Tiiny with no embedding model loaded is a normal Tuesday, not a fault, and it
+used to be indistinguishable from a Tiiny that was not there. The loader now
+separates four answers, and in all of them the reading is kept: no Tiiny set up
+yet, a Tiiny that did not answer, a Tiiny answering and serving no embedding
+model (it names what it is serving instead), and a folder with no markdown in
+it. The name index is built either way, because the names come out of the chunks
+and need no device, so a person whose Tiiny is asleep still gets their notes on
+the board and loses only the ability to ask. "Try again" picks up where it
+stopped.
+
+An empty board is never left without words on it. It says either "No notes yet"
+or, once notes are in but no name yet recurs across enough of them to draw,
+"Nothing to draw yet" with the count and where to read them.
+
+PDFs in the folder are counted and reported as not loaded in this build. The two
+OCR modules shell out to poppler and tesseract, and the farm's archive scanner
+refuses a shipped tree that can start another program, so they stay behind.
+
+### Three faults found while building it
+
+`archivist.die()` leaves by `sys.exit`, which raises SystemExit, which is not an
+Exception. A load started before the device was ever configured killed the
+worker thread on the first embedding call and left the job marked running, so
+the page reported "loading" for as long as it was open. The worker now catches
+BaseException, and an unconfigured device is one of the four states above.
+
+The cockpit caches its entity graph for the life of the process and a load is
+the one thing that invalidates it. Clearing it through `import cockpit` reached
+a second copy of the module: the app starts as `python3 cockpit.py`, so the
+module answering requests is `__main__`. The board stayed empty after a load
+while the vitals under it counted the new notes, which is the failure this
+release exists to fix, reintroduced by an import.
+
+`/api/ingest` and `/api/folders` are answered before a database connection is
+opened. Rebuilding the name index holds a write transaction and opening a
+connection runs the schema script, so during the last and slowest step of a load
+every route that opens one waited on it, including the two the page polls.
+
+### Two vaults no longer overwrite each other
+
+A note is filed under the folder it came from as well as its path inside it. A
+work vault and a personal one both have an Inbox at the top; filed on the
+relative path alone, the second one loaded replaced the first and a note the
+person could still see on disk left their board.
+
 ## 0.1.2
 
 ### A fresh install could not answer its own first two questions

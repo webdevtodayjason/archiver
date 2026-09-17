@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the release tarball the Tiiny App Farm installs.
 
-    python3 scripts/build-release.py 0.1.2
+    python3 scripts/build-release.py 0.1.3
 
 0.1.0 and 0.1.1 were packed by hand and the file list lived in somebody's shell
 history, which is not a thing a second person can repeat. It is written down
@@ -35,6 +35,7 @@ SHIPPED = (
     "cockpit.py",
     "entities.py",
     "hub.py",
+    "ingest.py",
     "md2jsonl.py",
     "overview.py",
     "static/cockpit.html",
@@ -84,7 +85,7 @@ def build(version, out_dir=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Build the farm release tarball.")
-    parser.add_argument("version", help="for example 0.1.2")
+    parser.add_argument("version", help="for example 0.1.3")
     parser.add_argument("--out", default=None, help="where to write it")
     args = parser.parse_args()
     out, digest, size = build(args.version, args.out)

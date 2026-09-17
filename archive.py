@@ -417,6 +417,10 @@ def add_text(jsonl_paths, source=None):
             c.execute("INSERT INTO page(doc_id,page_no,status,engine,conf,chars,text,done_at) "
                       "VALUES(?,1,'text','zim-html',1.0,?,?,?)",
                       (cur.lastrowid, len(text), text, now()))
+            # Chunked here, like a changed note, so `index` can embed it. A new
+            # note used to wait for the total rebuild, and sat in the archive
+            # unsearchable until someone noticed it never answered.
+            chunk_doc(c, cur.lastrowid)
             new += 1
         c.commit()
         print(f"  {f.name}: {new:,} articles in")

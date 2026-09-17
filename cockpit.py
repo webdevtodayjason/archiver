@@ -1000,6 +1000,9 @@ def selfcheck():
     c = archive.db()
     docs = c.execute("SELECT COUNT(*) n FROM doc").fetchone()["n"]
     assert docs == 9, f"expected 9 notes, got {docs}"
+    # A note taken in is a note that can be found: add-text chunks it itself.
+    fresh = c.execute("SELECT COUNT(*) n FROM chunk").fetchone()["n"]
+    assert fresh > 0, "add-text left the new notes without chunks"
     archive.chunk_all()
     chunks = c.execute("SELECT COUNT(*) n FROM chunk").fetchone()["n"]
     assert chunks > 0, "chunker produced nothing"

@@ -162,6 +162,33 @@ class Page(Served):
             self.assertEqual(sorted(d["subjects"][0]),
                              ["documents", "mentions", "name"], want)
 
+    def test_a_source_row_with_no_number_can_still_wrap(self):
+        """Three of the four row renderers draw no [n] column: the entity
+        answer, the refusal's IT READ and a subject profile. Below 480px the
+        locator takes a line of its own, and a title next to it with a zero flex
+        basis makes the line sum to exactly the width on offer, so the row never
+        wraps and the title is squeezed to no width at all. Measured at 400px
+        before the basis was made content-sized: a title 0px wide and 420px tall,
+        one letter per line, on the panel whose whole job is to show what the
+        Archivist read.
+        """
+        css = call("GET", "/")[1].decode()
+        flex = re.search(r"\.cite \.t\{[^}]*?flex:([^;}]+)", css, re.S).group(1)
+        self.assertEqual(flex.split()[-1], "auto", f".cite .t is flex:{flex}")
+
+    def test_the_profile_paths_print_no_citation_number(self):
+        """entities.profile() asks the model to cite over the thirty passages it
+        read and then returns only the books those passages came from, so a [n]
+        on the entity answer or a subject profile indexes something this page
+        never shows and could not show. Measured on the device: 49 markers over
+        8 books on one answer. Both screens strip them. The model path keeps
+        its uncited brackets, because there they are the only sign a reader gets
+        that the Archivist pointed at nothing.
+        """
+        page = call("GET", "/")[1].decode()
+        self.assertEqual(re.findall(r"(?<!function )prose\((\w+)", page),
+                         ["r", "unmarked", "unmarked"])
+
 
 # ----------------------------------------------------------------- the corpus
 class Health(Served):

@@ -95,7 +95,13 @@ button{font:19px var(--sans);cursor:pointer}
 .cite{display:flex;align-items:baseline;min-height:56px;padding-block:12px;
   border-top:1px solid var(--rule);scroll-margin-top:24px}
 .cite .n{flex:none;width:44px;font:19px var(--sans);color:var(--amber)}
-.cite .t{flex:1;min-width:0;font:20px var(--serif);color:var(--ink);overflow-wrap:break-word}
+/* The basis is the title's own width, never zero. Below 480px the locator takes
+   a whole line, and three of the four row renderers draw no [n] beside it, so a
+   zero-basis title makes those two sum to exactly the width on offer: the row
+   never wraps, the title is squeezed to nothing, and a book prints down the
+   page one letter per line. */
+.cite .t{flex:1 1 auto;min-width:0;font:20px var(--serif);color:var(--ink);
+  overflow-wrap:break-word}
 .cite .w{flex:none;padding-left:16px;font:19px var(--sans);color:var(--quiet)}
 .cite:target{outline:2px solid var(--amber);outline-offset:6px}
 
@@ -561,6 +567,17 @@ function marks(html, cited){
   });
 }
 
+// Everything entities.profile() answers - the entity path through ask() and a
+// subject on the index - numbers its brackets against the thirty passages it
+// read and then hands back only the handful of books those passages came from.
+// So [30] on that answer points at nothing this page shows or could show, and
+// it is not the guard's signal either, because that path runs no guard. The
+// markers come out. Measured on the device: one "what is a deadfall" carried 49
+// of them over 8 books, in runs of twelve that ate whole lines.
+function unmarked(text){
+  return String(text).replace(/[ \t]*(?:\[\d+\])+/g, "");
+}
+
 // cite() writes "{title} · {where}", and where is a page range on a book and a
 // shelf name on a wiki article. Neither is assumed.
 function splitTag(s){
@@ -609,7 +626,7 @@ function modelAnswer(r){
 function entityAnswer(r){
   var box = el("div", "sheet");
   box.appendChild(echo(r.q));
-  box.appendChild(prose(r.answer, r.cited));
+  box.appendChild(prose(unmarked(r.answer), r.cited));
   if (r.sources.length){
     box.appendChild(el("p", "label", "READ ACROSS " + r.via.toUpperCase()));
     r.sources.forEach(function(tag){ box.appendChild(citeRow(null, tag, null)); });
@@ -1015,8 +1032,8 @@ function showSubject(name){
       var line = "In " + num(d.docs) + " books. " + num(d.mentions) + " mentions.";
       if (d.read !== undefined) line += " " + num(d.read) + " passages read.";
       body.appendChild(el("p", "cost", line));
-      // profile() produces no citation indices, so no bracket here is linkified.
-      body.appendChild(prose(d.answer, []));
+      // The same dead numbering as the entity path, off the same profile().
+      body.appendChild(prose(unmarked(d.answer), []));
       if (d.sources.length){
         body.appendChild(el("p", "label", "FROM"));
         d.sources.forEach(function(tag){ body.appendChild(citeRow(null, tag, null)); });

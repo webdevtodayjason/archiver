@@ -58,6 +58,7 @@ canvas:active{cursor:grabbing}
 button{background:var(--panel);border:1px solid var(--line2);color:var(--steel);font:inherit;
   padding:5px 11px;border-radius:4px;cursor:pointer}
 button:hover{border-color:var(--hot);color:var(--hot)}
+button:disabled{opacity:.55;cursor:default;border-color:var(--line2);color:var(--dim)}
 .ans{margin-top:9px;padding:9px 10px;background:var(--panel);border:1px solid var(--line);
   border-radius:5px;font-size:12px;line-height:1.62;white-space:pre-wrap}
 /* the rail is a chat window: history scrolls, the input never moves */
@@ -138,6 +139,52 @@ footer b{color:var(--steel);font-weight:400}
 #reader .hd{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:baseline}
 #reader .hd .t{color:var(--white)}
 #reader .bd{padding:14px 17px;overflow:auto;white-space:pre-wrap;line-height:1.66;color:var(--ink)}
+/* The empty board. It is the one screen every new install opens on, and until
+   now it opened on nothing with no way out of it that did not involve a
+   terminal. So the door is drawn on the board itself. */
+.hello{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:24px}
+.hello.on{display:grid}
+.hello .in{max-width:430px}
+.hello h2{margin:15px 0 6px;color:var(--white);font-size:15px;font-weight:500;letter-spacing:.05em}
+.hello p{margin:0 0 15px;color:var(--steel)}
+.hello .big{padding:8px 19px;color:var(--hot);border-color:var(--hot)}
+.hello .h{margin-top:12px;color:var(--dim);font-size:11px}
+/* the folder browser: this server runs on your machine, so it can just look */
+.shorts{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.shorts button{font-size:11px;padding:3px 9px}
+.crumbs{display:flex;gap:9px;align-items:center;margin-bottom:6px;color:var(--dim);font-size:11px}
+.crumbs .p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--steel)}
+.fl{max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:5px}
+.fl .f{padding:5px 10px;cursor:pointer;border-bottom:1px solid var(--line);color:var(--steel)}
+.fl .f:last-child{border-bottom:0}
+.fl .f:hover{background:#0d1a12;color:var(--hot)}
+.stage{display:flex;gap:9px;align-items:baseline;padding:3px 0;color:var(--dim)}
+.stage .w{margin-left:auto;font-size:11px}
+.stage.on{color:var(--white)}
+.stage.was{color:var(--steel)}
+.stage.skip{color:#f0c040}
+.note{margin-top:11px;padding:9px 11px;border-radius:5px;background:#0d1a12;
+  border:1px solid var(--line2);color:var(--ink)}
+.note.warn{background:#1a1408;border-color:#55401d;color:#f0d9a8}
+.note.bad{background:#1a0f0c;border-color:#55261d;color:#ffb4a8}
+.note b{color:var(--white);font-weight:500}
+.note button{margin-top:8px}
+/* A phone is not the shape this was drawn for, but a person who opens it on one
+   still has to be able to reach the door and the rail. */
+@media (max-width:760px){
+  /* block, not a one-column grid: grid rows inside a fixed-height scroller get
+     squeezed and the rail paints straight through the map */
+  main{display:block;overflow:auto}
+  aside{border-right:0;border-bottom:1px solid var(--line);overflow:visible;height:auto}
+  aside.r{display:block;border-left:0;border-top:1px solid var(--line);overflow:visible}
+  .rscroll{overflow:visible}
+  .pinned{position:sticky;bottom:0}
+  .cwrap{height:58vh}
+  .modal,#writer,#reader{padding:9px}
+  header{flex-wrap:wrap;gap:8px}
+  header input{width:100%!important;order:9}
+  footer{display:none}
+}
 ::-webkit-scrollbar{width:7px;height:7px}
 ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
 </style></head><body>
@@ -147,6 +194,7 @@ footer b{color:var(--steel);font-weight:400}
     <span class="badge live" id="state">SETTLING</span>
     <span class="sp"></span>
     <span id="health"><span class="dot" id="hdot"></span><span id="hlbl">CHECKING</span></span>
+    <button id="loadbtn">load notes</button>
     <button id="newnote">+ note</button>
     <button id="helpbtn">?</button>
     <input id="q" placeholder="focus an entity…" autocomplete="off" style="width:210px">
@@ -175,6 +223,18 @@ footer b{color:var(--steel);font-weight:400}
       <div class="cap" id="cap">corpus-linked relations</div>
       <canvas id="c"></canvas>
       <div class="cnt" id="cnt"></div>
+      <div class="hello" id="hello"><div class="in">
+        <svg width="46" height="46" viewBox="0 0 32 32" aria-hidden="true">
+          <g stroke="#4ade80" stroke-width="1.7" stroke-linecap="round" fill="none">
+            <path d="M16 9v13M16 15l-7-3M16 15l7-3"/></g>
+          <g fill="#4ade80"><circle cx="16" cy="8" r="3.1"/><circle cx="8" cy="12" r="2.4"/>
+            <circle cx="24" cy="12" r="2.4"/><circle cx="16" cy="23" r="2.4"/></g></svg>
+        <h2 id="hello-h">No notes yet</h2>
+        <p id="hello-p">Point Tiiny Brain at a folder of markdown and it reads every note in it.</p>
+        <button class="big" id="hellogo">Load notes</button>
+        <div class="h" id="hello-f">Your notes stay where they are, in your own folder.
+          Nothing is uploaded anywhere.</div>
+      </div></div>
     </div>
     <aside class="r">
       <div class="rscroll" id="rscroll">
@@ -222,6 +282,35 @@ footer b{color:var(--steel);font-weight:400}
     <div class="ask"><input id="r-q" placeholder="ask about this note…"><button id="r-go">Ask</button></div>
   </div>
 </div></div>
+<div id="loader" class="modal"><div class="box">
+  <div class="hd"><span class="t">LOAD NOTES</span>
+    <span style="color:var(--dim)">a folder of markdown, read where it sits</span>
+    <span style="margin-left:auto;display:flex;gap:7px">
+      <button id="ld-close">close</button></span></div>
+  <div class="bd">
+    <div class="fld"><label>folder</label>
+      <div class="ask"><input id="ld-path" placeholder="~/Obsidian Vault" autocomplete="off"
+           spellcheck="false"><button id="ld-open">open</button></div>
+      <div class="hint" id="ld-count">…</div>
+      <div class="shorts" id="ld-shorts"></div>
+    </div>
+
+    <div class="sec"><h3>Folders in here</h3>
+      <div class="crumbs"><button id="ld-up">↑ up</button><span class="p" id="ld-here"></span></div>
+      <div class="fl" id="ld-list"></div>
+    </div>
+
+    <div class="sec">
+      <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+        <button class="big" id="ld-go" style="color:var(--hot);border-color:var(--hot)">Load notes</button>
+        <span id="ld-msg" style="color:var(--dim)"></span></div>
+      <div class="ovbar" id="ld-barw" style="display:none"><i id="ld-bar"></i></div>
+      <div id="ld-stages" style="margin-top:9px"></div>
+      <div id="ld-say"></div>
+    </div>
+  </div>
+</div></div>
+
 <div id="setup" class="modal"><div class="box">
   <div class="hd"><span class="t">SETUP</span>
     <span style="color:var(--dim)" id="set-file"></span>
@@ -246,6 +335,10 @@ footer b{color:var(--steel);font-weight:400}
     <div class="sec"><h3>Where your notes live</h3>
       <div class="fld"><label>vault folder</label><input id="set-vault" placeholder="/Users/you/brain/notes">
         <div class="hint">new notes are written here. point it at an Obsidian vault to write straight into it.</div></div>
+      <div style="display:flex;gap:9px;align-items:center;margin-top:11px;flex-wrap:wrap">
+        <button id="set-load">load notes from a folder</button>
+        <span class="hint" style="margin:0">reads every markdown note in it, then keeps
+          up with the ones you add.</span></div>
     </div>
 
     <div style="display:flex;gap:8px;margin-top:15px;align-items:center">
@@ -323,16 +416,21 @@ footer b{color:var(--steel);font-weight:400}
     </div>
 
     <div class="tab" id="t-load">
-      <h4>From Obsidian</h4>
+      <h4>From a folder of markdown</h4>
+      <p>Press <b>load notes</b> in the top bar, point it at the folder, press
+         <b>Load notes</b>. The folder a note sits in becomes its project and the
+         filename becomes its title. An Obsidian vault is exactly this.</p>
+      <p>It reads, cuts each note into passages, embeds them on your Tiiny and
+         rebuilds the name index, and tells you which step it is on. Point it at
+         the same folder again later and it only does what changed.</p>
+      <h4>The same thing from a terminal</h4>
       <p><code>python3 md2jsonl.py ~/vault out.jsonl</code> then
-         <code>archivist add-text out.jsonl</code>. Folder becomes the project,
-         filename becomes the title.</p>
-      <h4>Then</h4>
-      <p><code>archivist chunk</code> then <code>archivist index</code> to embed, then
-         <code>archivist entities</code> to rebuild the name index. Re-running only
-         does the new notes.</p>
+         <code>archiver add-text out.jsonl</code>, then <code>archiver chunk</code>,
+         <code>archivist index</code> to embed and
+         <code>python3 entities.py build</code> for the names.</p>
       <h4>From PDFs</h4>
-      <p><code>archivist add *.pdf</code>. Scanned pages go through OCR on the device.</p>
+      <p><code>archiver add *.pdf</code> on a checkout of the repo. PDFs are not
+         loaded in this build of the app yet.</p>
     </div>
 
     <div class="tab" id="t-trouble">
@@ -797,6 +895,140 @@ $('set-save').addEventListener('click',function(){
     health(true).then(function(){ if(!err.length) $('set-msg').textContent='saved'; });
   });
 });
+/* ------------------------------------------------------------ loading notes
+   The five commands that turn a folder of markdown into a board, behind one
+   button. The page's whole job here is to say which step it is on, and when a
+   step cannot run, which one and why. A person who never opens a terminal has
+   to be able to get from an empty board to notes on the board, so this is the
+   only path that has to work; the commands still exist and still do the same. */
+var LD={path:'',parent:'',poll:null};
+var LD_STAGES=[['reading','reading the folder'],['filing','filing the notes'],
+               ['chunking','cutting them into passages'],
+               ['embedding','embedding on the Tiiny'],['names','finding the names']];
+
+function ldOpen(path){
+  $('loader').classList.add('on');
+  ldBrowse(path||LD.path||(SET&&SET.vault)||'');
+  fetch('/api/ingest').then(function(r){return r.json()}).then(function(d){
+    ldSay(d); if(d.running){ if(d.folder) LD.path=d.folder; ldPoll(); }});
+}
+function ldClose(){ $('loader').classList.remove('on');
+  if(LD.poll){clearTimeout(LD.poll);LD.poll=null;} }
+
+function ldBrowse(path){
+  $('ld-count').textContent='looking…';
+  fetch('/api/folders?path='+encodeURIComponent(path||''))
+   .then(function(r){return r.json()}).then(function(d){
+    LD.path=d.path; LD.parent=d.parent||'';
+    $('ld-path').value=d.path;
+    /* the leaf, not the whole path: the field above already carries that */
+    $('ld-here').textContent=(d.path.split(/[\\/]/).filter(Boolean).pop()||d.path);
+    $('ld-up').style.display=d.parent?'':'none';
+    $('ld-shorts').innerHTML=(d.shortcuts||[]).map(function(x){
+      return '<button data-go="'+esc(x.path)+'">'+esc(x.label)+'</button>';}).join('');
+    if(d.error){ $('ld-count').textContent=d.error;
+      $('ld-list').innerHTML='<div class="empty" style="padding:7px 10px">nothing to show</div>';
+      return; }
+    var more=d.capped?'+':'';
+    $('ld-count').textContent=(d.md?(fmt(d.md)+more+' markdown notes in here')
+                                  :'no markdown notes in here')
+      +(d.pdf?(' \u00b7 '+fmt(d.pdf)+more+' PDFs'):'');
+    $('ld-list').innerHTML=(d.folders||[]).map(function(f){
+      return '<div class="f" data-go="'+esc(f.path)+'">'+esc(f.name)+'</div>';}).join('')
+      ||'<div class="empty" style="padding:7px 10px">no folders inside this one</div>';
+  }).catch(function(){ $('ld-count').textContent='could not read that folder'; });
+}
+
+function ldNote(kind,html){ return '<div class="note'+(kind?' '+kind:'')+'">'+html+'</div>'; }
+
+function ldSay(d){
+  var running=!!d.running, st=d.state||'idle';
+  $('ld-go').disabled=running;
+  $('ld-go').textContent=running?'loading…':'Load notes';
+  if(st==='idle'){ $('ld-stages').innerHTML=''; $('ld-say').innerHTML='';
+                   $('ld-barw').style.display='none'; return; }
+  var at=-1,i;
+  for(i=0;i<LD_STAGES.length;i++) if(LD_STAGES[i][0]===d.stage) at=i;
+  /* The pipeline runs to the end even when one step could not: the names come
+     out of the chunks and need no device. So a finished run ticks every step
+     except the one it names as skipped, which is marked rather than ticked. */
+  var ran=!running&&(st==='done'||st==='model'||st==='device'||st==='unset');
+  $('ld-stages').innerHTML=LD_STAGES.map(function(s,i){
+    var skip=(ran&&d.skipped===s[0]), past=!skip&&(ran||at>i), now=(at===i&&running);
+    return '<div class="stage '+(skip?'skip':(past?'was':(now?'on':'')))+'">'
+      +'<span>'+(skip?'\u25cb':(past?'\u2713':(now?'\u25b8':'\u00b7')))+'</span>'
+      +'<span>'+s[1]+(skip?' (waiting)':'')+'</span><span class="w">'
+      +((now&&d.total)?(fmt(d.done)+' of '+fmt(d.total)):'')+'</span></div>';}).join('');
+  $('ld-barw').style.display=running?'':'none';
+  $('ld-bar').style.width=(d.total?Math.round(d.done/d.total*100):0)+'%';
+
+  var say='';
+  var again='<div><button data-again="1">Try again</button></div>';
+  if(st==='done') say+=ldNote('','<b>Grown.</b> '+esc(d.message)+'. It is on the board.');
+  else if(st==='unset') say+=ldNote('warn','<b>On the board, not yet answerable.</b> '
+                                    +esc(d.message)
+                                    +'<div><button data-setup="1">open setup</button>'
+                                    +'<button data-again="1" style="margin-left:6px">Try again</button></div>');
+  else if(st==='model') say+=ldNote('warn','<b>On the board, not yet answerable.</b> '
+                                    +esc(d.message)+again);
+  else if(st==='device') say+=ldNote('bad','<b>On the board, not yet answerable.</b> '
+                                     +esc(d.message)
+                                     +' Check the host and key behind the light, then'+again);
+  else if(st==='empty') say+=ldNote('warn','<b>Nothing to read.</b> '+esc(d.message)
+                                    +'. Pick a folder with markdown notes in it.');
+  else if(st==='too-short') say+=ldNote('warn','<b>Nothing worth indexing.</b> '+esc(d.message)+'.');
+  else if(st==='no-folder') say+=ldNote('warn','<b>Not a folder.</b> '+esc(d.message)+'.');
+  else if(st==='error') say+=ldNote('bad','<b>It stopped.</b> '+esc(d.message)+again);
+  else if(running&&d.message) say+=ldNote('',esc(d.message)+'\u2026');
+  if(d.pdfs) say+=ldNote('warn',fmt(d.pdfs)+' PDFs are in that folder. PDFs are not loaded '
+                                +'in this build yet, so they were left alone.');
+  if((d.errors||[]).length) say+=ldNote('bad','<b>'+d.errors.length+' notes would not go in.</b> '
+                                +esc(d.errors.slice(0,3).join(' \u00b7 ')));
+  $('ld-say').innerHTML=say;
+}
+
+function ldGo(){
+  var path=$('ld-path').value.trim()||LD.path;
+  if(!path){ $('ld-msg').textContent='choose a folder first'; return; }
+  $('ld-msg').textContent=''; $('ld-say').innerHTML='';
+  fetch('/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},
+                       body:JSON.stringify({path:path})})
+   .then(function(r){return r.json()}).then(function(d){
+    if(d.error&&!d.busy){ $('ld-say').innerHTML=ldNote('bad',esc(d.error)); return; }
+    ldSay(d); ldPoll(); });
+}
+
+function ldPoll(){
+  if(LD.poll) clearTimeout(LD.poll);
+  LD.poll=setTimeout(function(){
+    fetch('/api/ingest').then(function(r){return r.json()}).then(function(d){
+      ldSay(d);
+      if(d.running) return ldPoll();
+      LD.poll=null;
+      /* the board is what a person came for, so it redraws itself the moment
+         the last step is done rather than waiting to be reloaded */
+      refresh().then(function(){ POS={}; load(''); health(false); });
+    }).catch(function(){ LD.poll=null; });},650);
+}
+
+$('loadbtn').addEventListener('click',function(){ldOpen('')});
+$('hellogo').addEventListener('click',function(){ldOpen('')});
+$('ld-close').addEventListener('click',ldClose);
+$('ld-go').addEventListener('click',ldGo);
+$('ld-open').addEventListener('click',function(){ldBrowse($('ld-path').value.trim())});
+$('ld-up').addEventListener('click',function(){if(LD.parent)ldBrowse(LD.parent)});
+$('ld-path').addEventListener('keydown',function(e){
+  if(e.key==='Enter') ldBrowse($('ld-path').value.trim())});
+$('loader').addEventListener('click',function(e){
+  if(e.target===$('loader')) return ldClose();
+  var go=e.target.closest&&e.target.closest('[data-go]');
+  if(go) return ldBrowse(go.getAttribute('data-go'));
+  if(e.target.closest&&e.target.closest('[data-again]')) return ldGo();
+  if(e.target.closest&&e.target.closest('[data-setup]')){ ldClose(); return openSetup(); }
+});
+$('set-load').addEventListener('click',function(){
+  $('setup').classList.remove('on'); ldOpen($('set-vault').value.trim()); });
+
 $('helpbtn').addEventListener('click',function(){$('help').classList.add('on')});
 $('help-close').addEventListener('click',function(){$('help').classList.remove('on')});
 $('help').addEventListener('click',function(e){if(e.target===$('help'))$('help').classList.remove('on')});
@@ -809,19 +1041,39 @@ document.querySelectorAll('.tabs button').forEach(function(b){
 });
 $('q').addEventListener('keydown',function(e){if(e.key==='Enter')load($('q').value.trim())});
 setInterval(function(){$('clock').textContent=new Date().toLocaleTimeString()},1000);
-fetch('/api/vitals').then(function(r){return r.json()}).then(function(d){
-  if(d.library) relabel();      // before projects(), which prints the word
-  $('v-notes').textContent=fmt(d.notes);$('v-chunks').textContent=fmt(d.chunks);
-  $('v-vec').textContent=fmt(d.vectors);$('v-ents').textContent=fmt(d.entities);
-  $('v-dedge').textContent=fmt(d.drawable_edges);
-  $('s-notes').textContent=fmt(d.notes);$('s-ents').textContent=fmt(d.entities);
-  $('s-ment').textContent=fmt(d.mentions);$('s-edges').textContent=fmt(d.drawable_edges);
-  projects();});
-size(); load(''); tick();
+/* The numbers, the rail and the empty-board panel are one answer to one
+   question: is there anything in here yet. So they are filled together, at boot
+   and again the moment a load finishes. */
+function refresh(){
+  return fetch('/api/vitals').then(function(r){return r.json()}).then(function(d){
+    if(d.library) relabel();      // before projects(), which prints the word
+    $('v-notes').textContent=fmt(d.notes);$('v-chunks').textContent=fmt(d.chunks);
+    $('v-vec').textContent=fmt(d.vectors);$('v-ents').textContent=fmt(d.entities);
+    $('v-dedge').textContent=fmt(d.drawable_edges);
+    $('s-notes').textContent=fmt(d.notes);$('s-ents').textContent=fmt(d.entities);
+    $('s-ment').textContent=fmt(d.mentions);$('s-edges').textContent=fmt(d.drawable_edges);
+    /* An empty board with no words on it is the bug this release is about, and
+       it has two shapes. Nothing loaded is the one everybody meets first. The
+       other is a small vault that loaded fine and has no name recurring across
+       enough notes to draw yet, which looks identical and is not the same thing
+       at all: those notes are there, in the rail, readable and answerable. */
+    var none=!d.notes, thin=(d.notes && !d.drawable_entities);
+    $('hello').classList.toggle('on', !!(none||thin));
+    $('hello-h').textContent = none?'No notes yet':'Nothing to draw yet';
+    $('hello-p').textContent = none
+      ? 'Point Tiiny Brain at a folder of markdown and it reads every note in it.'
+      : (fmt(d.notes)+' '+W.many+' are in. No name turns up across enough of them '
+         +'to draw a map yet, so the map is empty and the '+W.many+' are not. '
+         +'Open a '+W.shelf+' on the left to read them.');
+    $('hello-f').textContent = none
+      ? 'Your notes stay where they are, in your own folder. Nothing is uploaded anywhere.'
+      : 'The map fills in as names start recurring. More notes is usually all it takes.';
+    $('hellogo').textContent = none?'Load notes':'Load more notes';
+    projects(); return d;});
+}
+size(); refresh(); load(''); tick();
 health(false); setInterval(function(){health(false)},60000);
 if(location.hash==='#setup') openSetup();      // linkable, so support can say "open /#setup"
 if(location.hash==='#help') $('help').classList.add('on');
-/* nothing in the corpus means nothing to explain away: open the door instead */
-fetch('/api/vitals').then(function(r){return r.json()}).then(function(d){
-  if(!d.notes) $('help').classList.add('on'); });
+if(location.hash==='#load') ldOpen('');        // and "open /#load" to point it at a folder
 </script></body></html>

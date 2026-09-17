@@ -93,13 +93,25 @@ consults when they cannot look anything up.
 
 The same machinery points at a folder of markdown just as well as a shelf of PDFs.
 
+Open the cockpit and press **load notes**, then give it the folder. It walks the
+markdown, files each note under the folder it sits in, cuts it into passages,
+embeds them on the device and rebuilds the name index, saying which of those it
+is on as it goes. Point it at the same folder later and it only does what
+changed. That is the whole path, and it needs no terminal.
+
+The same five steps from a shell, which is what the button runs:
+
 ```bash
 python3 md2jsonl.py ~/vault notes.jsonl     # folder becomes the project, filename the title
-archivist add-text notes.jsonl
-archivist chunk && archivist index
+archiver add-text notes.jsonl
+archiver chunk && archivist index
 python3 entities.py build                   # the recurring names, no model involved
 python3 cockpit.py 8500                     # open http://127.0.0.1:8500
 ```
+
+If the device has no embedding model loaded, the notes and their names still
+land on the board and it says so; press try again once a model is up and only
+the waiting passages are embedded.
 
 The cockpit draws the names that keep turning up together, and you click one to pull its
 neighbourhood forward. Ask anything from the rail, write a new note into your vault, and

@@ -171,10 +171,18 @@ class Page(Served):
         before the basis was made content-sized: a title 0px wide and 420px tall,
         one letter per line, on the panel whose whole job is to show what the
         Archivist read.
+
+        The row is a grid now and the locator always takes a line of its own, so
+        the guard moved with it: the title's track has to be a real one with a
+        zero floor. A bare 1fr takes the longest title's intrinsic width as its
+        minimum and pushes the row off the side of a 340px margin instead.
         """
         css = call("GET", "/")[1].decode()
-        flex = re.search(r"\.cite \.t\{[^}]*?flex:([^;}]+)", css, re.S).group(1)
-        self.assertEqual(flex.split()[-1], "auto", f".cite .t is flex:{flex}")
+        for sel in (r"\.cite\{", r"\.cite\.plain\{"):
+            cols = re.search(sel + r"[^}]*?grid-template-columns:([^;}]+)",
+                             css, re.S).group(1).strip()
+            self.assertTrue(cols.endswith("minmax(0,1fr)"), f"{sel} is {cols}")
+        self.assertRegex(css, r"\.cite \.t\{[^}]*overflow-wrap:break-word")
 
     def test_the_profile_paths_print_no_citation_number(self):
         """entities.profile() asks the model to cite over the thirty passages it

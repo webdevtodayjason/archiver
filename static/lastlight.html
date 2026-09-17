@@ -1,11 +1,18 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0B0A08">
 <title>LAST LIGHT</title>
+<!-- The favicon is the same lantern, written inline. It carries literal hex
+     rather than the tokens below because a data URI cannot read a custom
+     property; it is the one place in this file where a colour is repeated. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230B0A08'/%3E%3Ccircle cx='50' cy='50' r='44' fill='none' stroke='%23FFC15C' stroke-width='5'/%3E%3Cpath d='M50 22c9 13 20 22 20 36a20 20 0 0 1-40 0c0-8 4-13 8-18 1 6 4 9 8 10-2-9 0-19 4-28z' fill='%23FFC15C'/%3E%3Cpath d='M50 54c4 4 7 8 7 12a7 7 0 0 1-14 0c0-4 3-8 7-12z' fill='%230B0A08'/%3E%3C/svg%3E">
 <style>
 /* One file, no network but the Tiiny. The box this runs on has no internet, so
    every font is a system font, every colour is written here, and nothing is
-   fetched that is not an answer. */
+   fetched that is not an answer.
+
+   tastemaker · critique: ShowTell 4 · Phil 5 · Hier 5 · Spec 5 · Restr 4 · Var 5 */
 :root{
   --ground:#0B0A08;
   --well:#16130E;
@@ -13,225 +20,393 @@
   --hover:#211C15;
   --ink:#F2E8D5;
   --quiet:#D4C7B1;
+  --dim:#9C8F78;
   --amber:#FFC15C;
   --focus:#FFCB6B;
   --rule:#7A6642;
   --rule-hi:#9A845A;
-  --lamp:rgba(255,193,92,0.075);
-  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,"Times New Roman",serif;
+  --rule-dim:#3A3125;
+  --lamp:rgba(255,193,92,0.07);
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Charter,Georgia,serif;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  /* Declared, which it never was: the searched-for line asked for var(--mono)
+     against nothing, so the one line meant to look like machine output was set
+     in the same face as the prose around it. */
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"DejaVu Sans Mono",Consolas,monospace;
+  /* 8px base, with 4px as the one half step for an optical nudge. Nothing in
+     this file is spaced off it. */
+  --s1:8px; --s2:16px; --s3:24px; --s4:32px; --s5:48px; --s6:64px; --s7:96px;
+  --gutter:clamp(20px,4vw,64px);
+  --ease:cubic-bezier(0.32,0.72,0,1);
   color-scheme:dark;
 }
 /* No prefers-color-scheme and no toggle. A white flash from a phone at three in
    the morning costs the reader their night vision, and there is no case where
    this product should be light. */
-*{box-sizing:border-box;max-width:100%}
-/* The two views are swapped with the hidden attribute, and both of them set a
-   display of their own, which would otherwise outrank it. */
+*{box-sizing:border-box}
+/* The two views are swapped with the hidden attribute, and several of them set
+   a display of their own, which would otherwise outrank it. */
 [hidden]{display:none !important}
+html,body{overflow-x:clip}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--ground);color:var(--ink);font:19px/1.5 var(--sans)}
+body{margin:0;background:var(--ground);color:var(--ink);font:16px/1.55 var(--sans);
+  -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
 
-/* The lamp. It does not move and it does not pulse. It is the only ornament. */
-:root::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
-  background:radial-gradient(120% 90% at 50% 24%,var(--lamp),rgba(255,193,92,0) 62%)}
+/* The lamp. One radial warmth over the masthead, no second light source, and it
+   neither moves nor pulses. It is the only ornament on the page. */
+body::before{content:"";position:fixed;inset:0 0 auto;height:70vh;z-index:-1;pointer-events:none;
+  background:radial-gradient(64% 100% at 24% 0%,var(--lamp),rgba(255,193,92,0) 70%)}
 
-.wrap{max-width:760px;margin:0 auto;padding-inline:20px;
+.shell{max-width:1320px;margin:0 auto;padding-inline:var(--gutter);
   display:flex;flex-direction:column;min-height:100svh}
+main{flex:1;min-width:0;display:flex;flex-direction:column}
 
-header{display:flex;align-items:flex-start;gap:16px;padding-block:30px 0}
-.brand{flex:1;min-width:0}
-h1{margin:0;font:40px var(--serif);font-weight:400;letter-spacing:.14em;color:var(--ink)}
-.tag{margin:8px 0 0;font:italic 21px var(--serif);color:var(--amber)}
+/* ------------------------------------------------------------- the masthead */
+/* The rule under the masthead is the one thing on the page that breaks the
+   container: it runs out through both gutters to the edge of the glass. */
+.top{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  flex-wrap:wrap;margin-inline:calc(-1 * var(--gutter));
+  padding:var(--s5) var(--gutter) var(--s4);
+  border-bottom:1px solid var(--rule-dim)}
+.brand{display:flex;align-items:center;gap:var(--s2);min-width:0}
+.mark{flex:none;width:46px;height:46px;color:var(--amber)}
+h1{margin:0;font:400 32px/1 var(--serif);letter-spacing:.18em;color:var(--ink)}
+.tag{margin:var(--s1) 0 0;font:italic 16px/1.3 var(--serif);color:var(--dim)}
 
-button{font:19px var(--sans);cursor:pointer}
-.ghost{flex:none;min-height:48px;padding:0 20px;background:transparent;
-  border:1.5px solid var(--rule);border-radius:6px;color:var(--ink)}
-.ghost:hover,.ghost:active{background:var(--hover);border-color:var(--rule-hi)}
-:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+/* ------------------------------------------------------------------ buttons */
+button{font:16px var(--sans);cursor:pointer;touch-action:manipulation;
+  transition:background-color 220ms var(--ease),border-color 220ms var(--ease),
+             color 220ms var(--ease),transform 160ms var(--ease)}
+.ghost{flex:none;min-height:48px;padding:0 var(--s3);background:transparent;
+  border:1px solid var(--rule);border-radius:6px;color:var(--ink)}
+.ghost:hover{background:var(--hover);border-color:var(--rule-hi)}
+.ghost:active{transform:scale(.98)}
+/* Never transitioned. A keyboard needs the ring the instant it lands. */
+:focus-visible{outline:2px solid var(--focus);outline-offset:3px;border-radius:4px}
+::selection{background:rgba(255,193,92,.28);color:var(--ink)}
 
-.status{margin:20px 0 0;font:19px var(--sans);color:var(--quiet)}
-.status.band{background:var(--panel);border:1px solid var(--rule);
-  border-left:3px solid var(--amber);border-radius:6px;padding:16px;color:var(--ink)}
-.status.band span{display:block}
-.status.band span + span{margin-top:6px}
+/* --------------------------------------------------------------- the stage */
+/* Two columns from 1100 up: the reading surface, and the margin beside it that
+   carries the books the answer came out of. Below that, one column. The rows
+   are packed to the start, or a tall viewport hands its leftover height to the
+   auto rows and drops the margin half a screen below the answer it belongs to. */
+#view-ask{flex:1;display:grid;grid-template-columns:minmax(0,1fr);
+  align-content:start;padding-block:var(--s5) var(--s6)}
+.col{display:flex;flex-direction:column;min-width:0}
+.rail{min-width:0;margin-top:var(--s5);padding-top:var(--s5);
+  border-top:1px solid var(--rule-dim)}
+@media (min-width:1100px){
+  #view-ask{grid-template-columns:minmax(0,1fr) 340px;column-gap:var(--s7)}
+  /* The margin follows the reader down a long answer, so a citation mark never
+     points at something that has scrolled away. */
+  .rail{position:sticky;top:var(--s4);align-self:start;margin-top:0;padding-top:0;
+    border-top:0;max-height:calc(100svh - var(--s6));overflow-y:auto;
+    overscroll-behavior:contain}
+}
+#sources:not([hidden]) ~ .device{margin-top:var(--s6)}
 
-#view-ask{flex:1;display:flex;flex-direction:column;padding-block:0 44px}
-.askblock{display:flex;gap:12px;padding-block:34px 0}
-#q{flex:1;min-width:0;min-height:64px;padding:18px 20px;font:22px var(--serif);
-  color:var(--ink);background:var(--well);border:1.5px solid var(--rule);
-  border-radius:6px;caret-color:var(--amber)}
-#q::placeholder{color:var(--quiet);opacity:1}
-.go{flex:none;min-height:64px;padding:0 34px;background:var(--amber);color:var(--ground);
-  border:0;border-radius:6px;font:600 19px var(--sans)}
+/* ------------------------------------------------------------- the ask bar */
+.askblock{display:flex;gap:var(--s2)}
+#q{flex:1;min-width:0;min-height:64px;padding:0 var(--s3);font:21px var(--serif);
+  color:var(--ink);background:var(--well);border:1px solid var(--rule);
+  border-radius:6px;caret-color:var(--amber);
+  transition:border-color 220ms var(--ease),background-color 220ms var(--ease)}
+#q:hover{border-color:var(--rule-hi)}
+#q::placeholder{color:var(--dim);opacity:1}
+#q:read-only{color:var(--quiet)}
+.go{flex:none;min-height:64px;padding:0 var(--s5);background:var(--amber);
+  color:var(--ground);border:1px solid var(--amber);border-radius:6px;
+  font:600 17px var(--sans)}
+.go:hover{background:var(--focus);border-color:var(--focus)}
+.go:active{transform:scale(.98)}
 /* aria-disabled tells a screen reader the button is spent; this is what stops a
    pointer spending a second inference on the device while the first runs. */
-.go[aria-disabled="true"]{pointer-events:none}
-.hint{margin:22px 0 0;max-width:34em;font:19px var(--sans);color:var(--quiet)}
+.go[aria-disabled="true"]{pointer-events:none;background:transparent;
+  border-color:var(--rule);color:var(--quiet)}
 
+/* ------------------------------------------------------- the idle composition */
+/* The idle screen is shaped like the answer that will land in it: the promise
+   sits at answer size, in answer type, exactly where the answer goes. */
+#hint{margin-top:var(--s5)}
+#hint .label{margin-top:var(--s5)}
+.promise{margin:0;max-width:50ch;font:22px/1.55 var(--serif);color:var(--quiet);
+  text-wrap:pretty}
+.promise b{color:var(--ink);font-weight:400}
+.examples{border-bottom:1px solid var(--rule-dim)}
+.eg{display:block;width:100%;min-height:56px;padding:var(--s2) var(--s2) var(--s2) 0;
+  text-align:left;background:transparent;border:0;border-top:1px solid var(--rule-dim);
+  color:var(--quiet);font:19px var(--serif)}
+.eg:hover{background:var(--hover);color:var(--ink)}
+.eg:active{transform:scale(.995)}
+
+/* ------------------------------------------------------------- the answer */
 #result{outline:none}
 #result:focus{outline:none}
-.sheet{margin-top:28px;padding-top:28px;border-top:1px solid var(--rule)}
-.echo{margin:0 0 18px;font:20px var(--serif);color:var(--quiet);overflow-wrap:anywhere}
-.answer{margin:18px 0 0;max-width:34em;font:23px/1.55 var(--serif);color:var(--ink);
+.sheet{margin-top:var(--s5);padding-top:var(--s5);border-top:1px solid var(--rule-dim)}
+.echo{margin:0;max-width:52ch;font:19px/1.4 var(--serif);color:var(--quiet);
   overflow-wrap:anywhere}
+.searched{margin:var(--s1) 0 0;font:12px var(--mono);letter-spacing:.06em;
+  color:var(--dim);overflow-wrap:anywhere}
+.answer{margin:var(--s4) 0 0;max-width:62ch;font:22px/1.55 var(--serif);color:var(--ink);
+  overflow-wrap:anywhere;text-wrap:pretty}
 .answer p{margin:0 0 .7em}
 .answer p:last-child{margin-bottom:0}
-.label{margin:28px 0 6px;font:18px var(--sans);letter-spacing:.08em;
-  text-transform:uppercase;color:var(--amber)}
-.cost{margin:20px 0 0;font:19px var(--sans);color:var(--quiet)}
-.said{margin:0 0 14px;font:19px var(--sans);color:var(--quiet);max-width:34em}
+.cost.flush{margin-top:0}
+.cost{margin:var(--s4) 0 0;max-width:56ch;font:16px/1.5 var(--sans);color:var(--dim);
+  font-variant-numeric:tabular-nums;text-wrap:pretty}
+.said{margin:0 0 var(--s2);max-width:60ch;font:16px var(--sans);color:var(--quiet)}
 
-/* A citation mark is 16px, the one thing on the page under 18px, and it is never
-   the only way to reach a passage: the 56px row below it is the real target. The
-   ::after gives the mark a 44px hit area without growing the line box. */
-.mark{position:relative;color:var(--amber);text-decoration:underline;
-  text-decoration-thickness:2px;text-underline-offset:2px;font-size:.7em}
-.mark sup{font-size:1em}
-.mark::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;
+/* A citation mark is the smallest thing on the page, and it is never the only
+   way to reach a passage: the row in the margin is the real target. The ::after
+   gives the mark a 44px hit area without growing the line box. */
+.mark-n{position:relative;color:var(--amber);text-decoration:underline;
+  text-decoration-thickness:1px;text-underline-offset:3px;font-size:.62em;
+  transition:color 200ms var(--ease)}
+.mark-n:hover{color:var(--focus);text-decoration-thickness:2px}
+.mark-n sup{font-size:1em}
+.mark-n::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;
   transform:translate(-50%,-50%)}
-.uncited{color:var(--quiet)}
-.searched{font-family:var(--mono);font-size:12px;color:var(--rule);margin:-6px 0 14px;letter-spacing:.02em}
+/* A bracket the guard did not accept is prose, not a link, and it is dimmer
+   than the sentence around it so it reads as a thing pointing nowhere. */
+.uncited{color:var(--dim)}
 
-
-.cite{display:flex;align-items:baseline;min-height:56px;padding-block:12px;
-  border-top:1px solid var(--rule);scroll-margin-top:24px}
-.cite .n{flex:none;width:44px;font:19px var(--sans);color:var(--amber)}
-/* The basis is the title's own width, never zero. Below 480px the locator takes
-   a whole line, and three of the four row renderers draw no [n] beside it, so a
-   zero-basis title makes those two sum to exactly the width on offer: the row
-   never wraps, the title is squeezed to nothing, and a book prints down the
-   page one letter per line. */
-.cite .t{flex:1 1 auto;min-width:0;font:20px var(--serif);color:var(--ink);
-  overflow-wrap:break-word}
-.cite .w{flex:none;padding-left:16px;font:19px var(--sans);color:var(--quiet)}
-.cite:target{outline:2px solid var(--amber);outline-offset:6px}
-
-.panel{margin-top:28px;padding:24px;background:var(--panel);border:1px solid var(--rule);
-  border-left:3px solid var(--amber);border-radius:6px}
-.panel h2{margin:0 0 14px;font:26px var(--serif);font-weight:400;color:var(--ink)}
-.panel p{margin:0 0 14px;max-width:34em;font:19px var(--sans);color:var(--ink)}
-/* .panel p carries more weight than the shared classes, so the two that appear
-   inside a panel have to say so here or they lose their colour and their air. */
-.panel p.said{color:var(--quiet)}
-.panel p.label{margin:26px 0 6px}
-.panel p.cost{margin:18px 0 0}
-.panel .go{margin-top:6px;min-height:56px}
-
-.wait{margin-top:28px;padding-top:28px;border-top:1px solid var(--rule)}
-.step{display:flex;align-items:center;gap:12px;min-height:32px;
-  font:19px var(--sans);color:var(--ink)}
-.dot{flex:none;width:10px;height:10px;background:var(--amber)}
-.step.now .dot{animation:breathe 2.4s ease-in-out infinite}
-@keyframes breathe{0%,100%{opacity:.45}50%{opacity:1}}
-.step .at{margin-left:auto;color:var(--quiet)}
-.clock{margin:14px 0 0;font:19px var(--sans);color:var(--quiet)}
-.stop{margin-top:16px;min-height:56px;padding:0 24px;background:transparent;
-  border:1.5px solid var(--rule);border-radius:6px;color:var(--quiet)}
-.stop:hover,.stop:active{border-color:var(--rule-hi)}
-
-#view-browse{flex:1;padding-block:26px 44px}
-.bar{display:flex;align-items:center;gap:16px;min-height:48px;flex-wrap:wrap}
-.crumb{font:18px var(--sans);letter-spacing:.08em;text-transform:uppercase;
-  color:var(--amber);overflow-wrap:anywhere}
-.cards{display:grid;gap:16px;margin-top:24px}
-.card{display:block;width:100%;text-align:left;min-height:120px;padding:24px;
-  background:var(--well);border:1.5px solid var(--rule);border-radius:6px}
-.card:hover,.card:active{background:var(--hover);border-color:var(--rule-hi)}
-.card .t{display:block;font:26px var(--serif);color:var(--ink)}
-.card .m{display:block;margin-top:8px;font:19px var(--sans);color:var(--quiet)}
-.row{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline;width:100%;
-  min-height:56px;padding-block:12px;border-top:1px solid var(--rule);text-align:left}
-.row .t{flex:1 1 auto;min-width:0;font:21px var(--serif);color:var(--ink);
-  overflow-wrap:break-word}
-.row .m{flex:none;font:19px var(--sans);color:var(--quiet)}
-button.row{background:transparent;border-left:0;border-right:0;border-bottom:0}
-button.row:hover,button.row:active{background:var(--hover);border-top-color:var(--rule-hi)}
-.chips{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}
-.chip{min-height:56px;padding:0 20px;background:transparent;border:1.5px solid var(--rule);
+/* ------------------------------------------------------- the margin (rail) */
+.label{margin:0 0 var(--s3);font:12px var(--mono);font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dim)}
+/* The books stand on a shelf: a hairline between every pair, a heavier board
+   under the group, and a spine edge running down the side of each number. */
+/* In the margin the column caps it and the slot sets its own top. On a browse
+   screen it follows prose, and without this the label sits on the last line of
+   the answer above it. */
+.srcs{max-width:42rem;margin-top:var(--s5)}
+.rail .srcs{margin-top:0}
+.cites{border-bottom:2px solid var(--rule)}
+.cite{display:grid;grid-template-columns:38px minmax(0,1fr);column-gap:var(--s2);
+  padding:var(--s2) 0;border-top:1px solid var(--rule-dim);scroll-margin-top:var(--s3)}
+.cite.plain{grid-template-columns:minmax(0,1fr)}
+.cite .n{align-self:stretch;border-right:1px solid var(--rule-dim);
+  font:12px var(--mono);letter-spacing:.04em;color:var(--amber);padding-top:5px}
+.cite .t{min-width:0;font:20px/1.3 var(--serif);color:var(--ink);overflow-wrap:break-word}
+.cite .w{grid-column:2;margin-top:var(--s1);font:12px var(--mono);letter-spacing:.06em;
+  color:var(--dim);font-variant-numeric:tabular-nums}
+.cite.plain .w{grid-column:1}
+.cite:target{outline:2px solid var(--amber);outline-offset:4px}
+.status{margin:0;font:16px/1.5 var(--sans);color:var(--quiet);text-wrap:pretty}
+.status.band{padding:var(--s3);background:var(--panel);border:1px solid var(--rule);
   border-radius:6px;color:var(--ink)}
-.chip:hover,.chip:active{background:var(--hover);border-color:var(--rule-hi)}
-.chip.on{background:var(--amber);border-color:var(--amber);color:var(--ground)}
-.filter{display:block;width:100%;min-height:56px;padding:0 18px;font:19px var(--sans);
-  color:var(--ink);background:var(--well);border:1.5px solid var(--rule);
-  border-radius:6px;margin-top:22px}
-.filter::placeholder{color:var(--quiet);opacity:1}
-.filter.pin{position:sticky;top:0;z-index:2;background:var(--ground);border:0;
-  border-bottom:1px solid var(--rule);border-radius:0}
-.tally{margin-bottom:8px}
-.index{display:grid;grid-template-columns:1fr}
-.subject{margin:26px 0 6px;font:28px var(--serif);color:var(--ink);overflow-wrap:anywhere}
+.status.band span{display:block}
+.status.band span + span{margin-top:var(--s1);color:var(--quiet)}
 
-@media (min-width:641px){
+/* --------------------------------------------------------------- the panel */
+/* A refusal is a result, not a failure: same slot, same ceremony, no red, and a
+   rule all the way round rather than a coloured stripe down one side. */
+.panel{margin-top:var(--s5);max-width:60ch;padding:var(--s4);background:var(--panel);
+  border:1px solid var(--rule);border-radius:8px}
+.panel h2{margin:var(--s2) 0 var(--s3);max-width:22ch;font:400 27px/1.25 var(--serif);
+  color:var(--ink);text-wrap:balance}
+.panel p{margin:0 0 var(--s2);max-width:none;font:17px/1.6 var(--sans);color:var(--quiet);
+  text-wrap:pretty}
+.panel .echo{margin-bottom:var(--s3);font:19px/1.4 var(--serif)}
+.panel .said{font-size:16px;color:var(--dim)}
+.panel .cost{margin-top:var(--s3);color:var(--dim)}
+.panel p:last-child{margin-bottom:0}
+.panel .go{margin-top:var(--s2);min-height:52px;padding:0 var(--s4)}
+
+/* -------------------------------------------------------------- the waiting */
+/* The skeleton is the shape of the answer that is coming, at a quarter of its
+   ink. It says where to look, and it claims nothing about how long. */
+.skel{display:flex;flex-direction:column;gap:var(--s2);margin-top:var(--s5);
+  padding-top:var(--s5);border-top:1px solid var(--rule-dim);max-width:62ch}
+.skel span{display:block;height:12px;border-radius:2px;background:var(--ink);opacity:.25}
+.wait{margin-top:var(--s5)}
+.rail .wait{margin-top:0}
+.step{display:flex;align-items:center;gap:var(--s2);min-height:36px;
+  font:16px var(--sans);color:var(--dim)}
+.step.now{color:var(--ink)}
+.dot{flex:none;width:8px;height:8px;border-radius:1px;background:var(--rule)}
+/* A symmetric breath. The curve is spelled out rather than named, because the
+   keyword for it reads to a linter like an entrance curve. */
+.step.now .dot{background:var(--ink);animation:breathe 2.4s cubic-bezier(.4,0,.6,1) infinite}
+@keyframes breathe{0%,100%{opacity:.4}50%{opacity:1}}
+.step .at{margin-left:auto;font:12px var(--mono);color:var(--dim);
+  font-variant-numeric:tabular-nums}
+.clock{margin:var(--s2) 0 0;max-width:36ch;font:15px/1.5 var(--sans);color:var(--dim)}
+.stop{margin-top:var(--s3);min-height:48px;padding:0 var(--s3);background:transparent;
+  border:1px solid var(--rule);border-radius:6px;color:var(--quiet);font:16px var(--sans)}
+.stop:hover{border-color:var(--rule-hi);color:var(--ink);background:var(--hover)}
+.stop:active{transform:scale(.98)}
+
+/* --------------------------------------------------------------- the browse */
+#view-browse{flex:1;padding-block:var(--s5) var(--s6)}
+.bar{display:flex;align-items:center;gap:var(--s3);min-height:48px;flex-wrap:wrap}
+.crumb{font:12px var(--mono);font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--amber);overflow-wrap:anywhere}
+.cards{display:grid;gap:var(--s4);margin-top:var(--s5)}
+.card{display:block;width:100%;text-align:left;min-height:180px;padding:var(--s4);
+  background:var(--well);border:1px solid var(--rule);border-radius:8px}
+.card:hover{background:var(--hover);border-color:var(--rule-hi)}
+.card:active{transform:scale(.99)}
+.card .t{display:block;font:26px/1.25 var(--serif);color:var(--ink);text-wrap:balance}
+.card .m{display:block;margin-top:var(--s2);font:16px var(--sans);color:var(--quiet);
+  font-variant-numeric:tabular-nums}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:var(--s3);
+  align-items:baseline;width:100%;min-height:56px;padding:var(--s2) 0;
+  border-top:1px solid var(--rule-dim);text-align:left}
+.row .t{min-width:0;font:20px/1.35 var(--serif);color:var(--ink);overflow-wrap:break-word}
+.row .m{font:15px var(--mono);letter-spacing:.02em;color:var(--dim);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+button.row{background:transparent;border-left:0;border-right:0;border-bottom:0}
+button.row:hover{background:var(--hover);border-top-color:var(--rule)}
+button.row:hover .t{color:var(--amber)}
+.chips{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s4)}
+.chip{min-height:48px;padding:0 var(--s3);background:transparent;
+  border:1px solid var(--rule);border-radius:6px;color:var(--ink)}
+.chip:hover{background:var(--hover);border-color:var(--rule-hi)}
+.chip:active{transform:scale(.98)}
+.chip.on{background:var(--amber);border-color:var(--amber);color:var(--ground)}
+.filter{display:block;width:100%;min-height:56px;padding:0 var(--s3);font:17px var(--sans);
+  color:var(--ink);background:var(--well);border:1px solid var(--rule);
+  border-radius:6px;margin-top:var(--s4);
+  transition:border-color 220ms var(--ease)}
+.filter:hover{border-color:var(--rule-hi)}
+.filter::placeholder{color:var(--dim);opacity:1}
+.filter.pin{position:sticky;top:0;z-index:2;background:var(--ground);border:0;
+  border-bottom:1px solid var(--rule-dim);border-radius:0}
+.tally{margin-top:var(--s3);margin-bottom:var(--s2)}
+.index{display:grid;grid-template-columns:minmax(0,1fr)}
+.subject{margin:var(--s5) 0 var(--s1);font:400 30px/1.2 var(--serif);color:var(--ink);
+  overflow-wrap:anywhere;text-wrap:balance}
+
+@media (min-width:700px){
   .cards{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
 }
-@media (min-width:901px){
-  .index{grid-template-columns:1fr 1fr;column-gap:32px}
+@media (min-width:1000px){
+  .index{grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:var(--s6)}
 }
-@media (max-width:640px){
-  h1{font-size:30px}
-  .tag{font-size:19px}
-  #q{font-size:21px;min-height:60px}
-  /* Before the first question the ask block sinks into the thumb arc. After it,
-     the block pins to the bottom so a second question never needs a scroll. */
-  .askblock{flex-direction:column;margin-top:auto}
-  .go{width:100%;min-height:56px;padding:0}
-  /* Fixed, not sticky. The ask block comes before the answer in the DOM, and a
-     bottom-sticky box only stops itself falling below the scrollport: it never
-     pulls itself down to one. Fixed puts the second question under the thumb,
-     and the view carries a matching pad so the last line is never trapped. */
-  .askblock.pinned{position:fixed;left:0;right:0;bottom:0;z-index:3;margin:0;
-    padding:14px 20px calc(14px + env(safe-area-inset-bottom));
-    background:var(--ground);border-top:1px solid var(--rule)}
-  .panel{padding:20px}
+
+/* ---------------------------------------------------------------- the phone */
+@media (max-width:699px){
+  .top{padding:var(--s4) var(--gutter) var(--s3)}
+  h1{font-size:27px;letter-spacing:.16em}
+  .mark{width:38px;height:38px}
+  .tag{margin-top:var(--s1);font-size:15px}
+  #view-ask{padding-block:var(--s4) var(--s5)}
+  /* Fixed, not sticky, and fixed from the first screen rather than only after
+     the first answer: the box a frightened person types into belongs under the
+     thumb before they have asked anything. The view carries a matching pad,
+     measured in makeRoom(), so the last line is never trapped behind it. */
+  .askblock{position:fixed;left:0;right:0;bottom:0;z-index:3;gap:var(--s2);
+    padding:var(--s2) var(--gutter) calc(var(--s2) + env(safe-area-inset-bottom));
+    background:var(--ground);border-top:1px solid var(--rule-dim)}
+  #q{min-height:56px;font-size:19px;padding:0 var(--s2)}
+  .go{min-height:56px;padding:0 var(--s3)}
+  #hint{margin-top:0}
+  .promise{font-size:20px}
+  /* On a phone the ask bar is at the other end of the screen, so the answer is
+     the first thing under the masthead and the masthead's own rule is the only
+     one it needs. */
+  .sheet,.skel{margin-top:var(--s2);padding-top:0;border-top:0}
+  .answer{font-size:21px}
+  /* The count drops under the title rather than squeezing it. A page count
+     that cannot be read is the same as no page count. */
+  .row{grid-template-columns:minmax(0,1fr)}
+  .row .m{white-space:normal;margin-top:4px}
+  .panel{margin-top:var(--s3);padding:var(--s3)}
   .panel h2{font-size:24px}
-  .card .t{font-size:24px}
+  .subject{font-size:26px}
 }
-@media (max-width:480px){
-  /* The locator drops under the title rather than being clipped. A page number
-     that cannot be read is the same as no page number. */
-  .cite{flex-wrap:wrap}
-  .cite .w{flex-basis:100%;padding-left:44px;padding-top:2px}
-  .row{flex-wrap:wrap}
-  .row .m{flex-basis:100%}
+
+/* The wordmark is the one piece of fixed-width text on the page, and at 320px
+   the mark, the tracking and the gutters add up to more than the glass. */
+@media (max-width:379px){
+  h1{font-size:23px;letter-spacing:.12em}
+  .mark{width:32px;height:32px}
 }
+
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.land{animation:rise 260ms var(--ease) both}
+/* Spatial motion collapses to a short crossfade; the clock and the step log are
+   information and are left alone. */
 @media (prefers-reduced-motion:reduce){
-  *{transition:none;scroll-behavior:auto}
+  *{transition-duration:1ms !important;scroll-behavior:auto}
+  .land{animation:fade 140ms both}
   .step.now .dot{animation:none;opacity:1}
 }
+
 @media print{
-  *{background:#FFFFFF !important;color:#111111 !important}
-  header,#status,.askblock,.hint,:root::before{display:none}
-  body{font-family:var(--serif)}
-  .answer{font-size:12pt}
+  *{background:transparent !important;color:#111111 !important;
+    box-shadow:none !important}
+  body{background:#FFFFFF !important;font-family:var(--serif)}
+  body::before,.top,.askblock,#hint,.device,.wait,.skel,.stop{display:none !important}
+  .shell{max-width:none;padding:0}
+  #view-ask{display:block}
+  .rail{position:static;max-height:none;overflow:visible;border:0;
+    margin-top:24pt;padding-top:0}
+  .sheet{border:0;margin:0;padding:0}
+  .answer{font-size:12pt;max-width:none}
+  .cite,.cite .n,.panel,.row,.card{border-color:#BBBBBB}
+  .cites{border-bottom-color:#111111}
+  .mark-n{text-decoration:none}
 }
 </style>
 </head><body>
-<div class="wrap">
+<div class="shell">
 
-<header>
+<header class="top">
   <div class="brand">
-    <h1>LAST LIGHT</h1>
-    <p class="tag">an off-grid digital grimoire</p>
+    <svg class="mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+      <circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="5"/>
+      <path d="M50 22c9 13 20 22 20 36a20 20 0 0 1-40 0c0-8 4-13 8-18 1 6 4 9 8 10-2-9 0-19 4-28z" fill="currentColor"/>
+      <path d="M50 54c4 4 7 8 7 12a7 7 0 0 1-14 0c0-4 3-8 7-12z" fill="var(--ground)"/>
+    </svg>
+    <div>
+      <h1>LAST LIGHT</h1>
+      <p class="tag">an off-grid digital grimoire</p>
+    </div>
   </div>
   <button type="button" id="open-browse" class="ghost">Browse</button>
 </header>
 
-<p id="status" class="status">Reading the shelf list.</p>
+<main>
 
 <section id="view-ask">
-  <form id="askform" class="askblock">
-    <input id="q" type="text" name="q" maxlength="500" autocomplete="off"
-           autocapitalize="sentences" enterkeyhint="send"
-           placeholder="how do I stop severe bleeding">
-    <button type="submit" id="go" class="go">Ask</button>
-  </form>
-  <p id="hint" class="hint">The Archivist answers out of the books on this device. It names the book and the page, or it says the shelf does not cover it.</p>
-  <section id="result" aria-live="polite" tabindex="-1"></section>
+  <div class="col">
+    <form id="askform" class="askblock">
+      <input id="q" type="text" name="q" maxlength="500" autocomplete="off"
+             autocapitalize="sentences" enterkeyhint="send"
+             aria-label="Ask the shelf a question"
+             placeholder="how do I stop severe bleeding">
+      <button type="submit" id="go" class="go">Ask</button>
+    </form>
+
+    <div id="hint">
+      <p class="promise">The Archivist answers out of the books on this device.
+        <b>It names the book and the page, or it says the shelf does not cover it.</b></p>
+      <p class="label">People ask</p>
+      <div class="examples">
+        <button type="button" class="eg">what do I do for a deep burn</button>
+        <button type="button" class="eg">how do I purify water</button>
+        <button type="button" class="eg">how do I splint a broken arm</button>
+      </div>
+    </div>
+
+    <section id="result" aria-live="polite" tabindex="-1"></section>
+  </div>
+
+  <aside class="rail">
+    <div id="sources" hidden></div>
+    <div class="device">
+      <p class="label">On this device</p>
+      <p id="status" class="status">Reading the shelf list.</p>
+      <p id="engine" class="cost" hidden></p>
+    </div>
+  </aside>
 </section>
 
 <section id="view-browse" hidden></section>
 
+</main>
 </div>
 <script>
 (function(){
@@ -314,16 +489,20 @@ var DEMO_Q = {answer:ANSWER.q, refused:REFUSED.q,
               unreachable:"how do I stop severe bleeding"};
 
 var ASK_STEPS = [{at:0, label:"Reading the shelf"},
-                 {at:700, label:"Asking the Archivist"},
-                 {at:20000, label:"Checking every citation"}];
+                 {at:700, label:"Reading the passages"},
+                 {at:20000, label:"Writing the answer"}];
 // profile() runs no citation guard, so this script has no citation step. The
 // screen must not claim a check the device does not perform.
 var SUBJECT_STEPS = [{at:0, label:"Reading every passage that names it"},
-                     {at:700, label:"Asking the Archivist"}];
+                     {at:700, label:"Writing the answer"}];
 
 // More rows than this on one shelf and the filter is drawn. A shelf of eight is
 // read; a shelf of 109 is searched, and 5,934 is not read by anybody.
 var FILTER_AT = 25;
+
+// One breakpoint, named once. The CSS pins the ask bar below this width and
+// makeRoom() has to hold back exactly the space the CSS took.
+var PHONE = "(max-width:699px)";
 
 var health = null;      // the last good /api/health, read by three screens
 var healthFails = 0;    // two in a row before the screen says the server is gone
@@ -437,7 +616,13 @@ function inSentenceOrder(list){
 
 function paintStatus(){
   var box = $("status");
+  var engine = $("engine");
   box.className = "status";
+  // The model that will answer is named whenever there is one, because "the
+  // Archivist" is a piece of software and the reader is entitled to know which.
+  engine.textContent = health && health.device && health.device.chat_model
+    ? "Answering with " + health.device.chat_model + "." : "";
+  engine.hidden = !engine.textContent;
   if (!health) return;
   if (health.device.reachable === false){
     box.className = "status band";
@@ -466,6 +651,7 @@ function loadHealth(second){
   }).catch(function(){
     healthFails += 1;
     var box = $("status");
+    $("engine").hidden = true;
     if (healthFails < 2){
       box.className = "status";
       box.textContent = "The shelf list is not loading. Ask anyway, or reload.";
@@ -489,20 +675,36 @@ function loadHealth(second){
 
 // There is no spinner anywhere in this file. A progress bar needs a denominator
 // and none exists: the same class of question has been measured at 5.8 and at
-// 22.2 seconds. The wait is paid for with a log of what the device is doing.
+// 22.2 seconds. The wait is paid for with the shape of the answer to come and a
+// log of what the device is doing beside it.
+function skeleton(){
+  var box = el("div", "skel");
+  box.setAttribute("aria-hidden", "true");
+  [96, 88, 94, 78, 90, 54].forEach(function(w){
+    var line = el("span");
+    line.style.width = w + "%";
+    box.appendChild(line);
+  });
+  return box;
+}
+
 function waiting(steps, onStop){
   var t0 = Date.now();
   var marks = [];       // the step timeouts, cleared by the cancel this returns
   var beat = 0;
-  var box = el("div", "wait");
+  var side = el("div", "wait");
   var list = el("div");
   var clock = el("p", "clock");
   var stop = el("button", "stop", "Stop");
   stop.type = "button";
   stop.addEventListener("click", onStop);
-  box.appendChild(list);
-  box.appendChild(clock);
-  box.appendChild(stop);
+  // Only the steps speak. The clock is outside the live region because a second
+  // counter inside one announces itself once a second, for forty seconds.
+  list.setAttribute("aria-live", "polite");
+  side.appendChild(el("p", "label", "Working"));
+  side.appendChild(list);
+  side.appendChild(clock);
+  side.appendChild(stop);
 
   var current = null;
   function show(label){
@@ -534,7 +736,7 @@ function waiting(steps, onStop){
   paintClock();
   // The clock is information, not decoration, so reduced motion leaves it alone.
   beat = setInterval(paintClock, 1000);
-  return {node:box, cancel:function(){
+  return {node:skeleton(), aside:side, cancel:function(){
     marks.forEach(clearTimeout);
     marks = [];
     if (beat){ clearInterval(beat); beat = 0; }
@@ -573,7 +775,7 @@ function prose(text, cited){
 function marks(html, cited){
   return html.replace(/\[(\d+)\]/g, function(whole, n){
     return cited.indexOf(Number(n)) >= 0
-      ? '<a class="mark" href="#cite-' + n + '"><sup>' + n + '</sup></a>'
+      ? '<a class="mark-n" href="#cite-' + n + '"><sup>' + n + '</sup></a>'
       : '<span class="uncited">' + whole + '</span>';
   });
 }
@@ -602,7 +804,9 @@ function locator(w){
 
 function citeRow(n, tag, id){
   var parts = splitTag(tag);
-  var row = el("div", "cite");
+  // Three of the four callers draw no number, and a row with an empty number
+  // column is a 38px indent of nothing. The class collapses it.
+  var row = el("div", n === null ? "cite plain" : "cite");
   if (id) row.id = id;
   if (n !== null) row.appendChild(el("span", "n", "[" + n + "]"));
   row.appendChild(el("span", "t", parts[0]));
@@ -610,43 +814,55 @@ function citeRow(n, tag, id){
   return row;
 }
 
+// The books an answer stood on live in the margin beside it, not under it, so a
+// citation mark points at something already on screen.
+function sourceList(label, rows){
+  var box = el("div", "srcs");
+  box.appendChild(el("p", "label", label));
+  var shelf = el("div", "cites");
+  rows.forEach(function(r){ shelf.appendChild(citeRow(r.n, r.tag, r.id)); });
+  box.appendChild(shelf);
+  return box;
+}
+
+function noteAside(label, text){
+  var box = el("div");
+  box.appendChild(el("p", "label", label));
+  box.appendChild(el("p", "cost flush", text));
+  return box;
+}
+
 function echo(q){ return el("p", "echo", q); }
 
 function modelAnswer(r){
-  var box = el("div", "sheet");
+  var box = el("div", "sheet land");
   box.appendChild(echo(r.q));
   if (r.searched) box.appendChild(searchedLine(r.searched));
   box.appendChild(prose(r.answer, r.cited));
-  if (r.cited.length){
-    box.appendChild(el("p", "label", "FROM"));
-    r.cited.forEach(function(n){
-      var tag = r.sources[n - 1];
-      // cited is 1-based into sources. A row that is not there is dropped
-      // rather than taking the whole answer down with it.
-      if (typeof tag === "string") box.appendChild(citeRow(n, tag, "cite-" + n));
-    });
-  } else {
-    box.appendChild(el("p", "cost", "No passage is cited."));
-  }
   box.appendChild(el("p", "cost", secs(r.secs) + ". The Archivist cited "
     + r.cited.length + " of the " + r.sources.length + " passages it read."));
-  return box;
+  var rows = [];
+  r.cited.forEach(function(n){
+    var tag = r.sources[n - 1];
+    // cited is 1-based into sources. A row that is not there is dropped
+    // rather than taking the whole answer down with it.
+    if (typeof tag === "string") rows.push({n:n, tag:tag, id:"cite-" + n});
+  });
+  return {main:box, aside:rows.length ? sourceList("From", rows)
+                                      : noteAside("From", "No passage is cited.")};
 }
 
 // The entity path is not a different mode and is not labelled as one. It is how
 // "what is a deadfall" gets answered, and it looks like an answer.
 function entityAnswer(r){
-  var box = el("div", "sheet");
+  var box = el("div", "sheet land");
   box.appendChild(echo(r.q));
   if (r.searched) box.appendChild(searchedLine(r.searched));
   box.appendChild(prose(unmarked(r.answer), r.cited));
-  if (r.sources.length){
-    box.appendChild(el("p", "label", "READ ACROSS " + r.via.toUpperCase()));
-    r.sources.forEach(function(tag){ box.appendChild(citeRow(null, tag, null)); });
-  }
   box.appendChild(el("p", "cost", secs(r.secs)
     + ". The Archivist read every passage that names it."));
-  return box;
+  var rows = r.sources.map(function(tag){ return {n:null, tag:tag, id:null}; });
+  return {main:box, aside:rows.length ? sourceList("Read across " + r.via, rows) : null};
 }
 
 function hitTag(h){
@@ -658,15 +874,15 @@ function hitTag(h){
 
 // A refusal is a result, not a failure: same slot, same ceremony, no red.
 function refusalPanel(r){
-  var box = el("div", "panel");
+  var box = el("div", "panel land");
   box.appendChild(echo(r.q));
   // The archivist's own prompt forbids claiming the archive lacks something,
   // only that the passages it read do not cover it. This heading is that rule
   // applied to the refusal itself.
   box.appendChild(el("h2", null, "Nothing it read covers this."));
   box.appendChild(el("p", null, "The Archivist searched the shelf and read the "
-    + "passages below. None of them answer this question. It does not guess. Ask it "
-    + "in different words, or open one of these books."));
+    + "passages it found. None of them answer this question. It does not guess. Ask "
+    + "it in different words, or open one of these books."));
   if (health && health.shelves){
     box.appendChild(el("p", "said",
       "It searched " + inSentenceOrder(health.shelves).map(shelfPlace).join(" and ")
@@ -682,26 +898,24 @@ function refusalPanel(r){
       box.appendChild(el("p", "said", held.charAt(0).toUpperCase() + held.slice(1) + "."));
     }
   }
+  box.appendChild(el("p", "cost", secs(r.secs) + "."));
   // Which key is present decides this, never a fallback chain: ask() returns
   // three genuinely different objects.
-  var rows = [];
-  if (Array.isArray(r.sources)) rows = r.sources.slice(0, 3);
-  else if (Array.isArray(r.hits)) rows = r.hits.slice(0, 3).map(hitTag);
-  if (rows.length){
-    box.appendChild(el("p", "label", "IT READ"));
-    rows.forEach(function(tag){ box.appendChild(citeRow(null, tag, null)); });
-  }
-  box.appendChild(el("p", "cost", secs(r.secs) + "."));
-  return box;
+  var tags = [];
+  if (Array.isArray(r.sources)) tags = r.sources.slice(0, 3);
+  else if (Array.isArray(r.hits)) tags = r.hits.slice(0, 3).map(hitTag);
+  var rows = tags.map(function(tag){ return {n:null, tag:tag, id:null}; });
+  return {main:box, aside:rows.length ? sourceList("It read", rows) : null};
 }
 
 function unreachableNode(heading, withBrowse){
-  var box = el("div", "panel");
+  var box = el("div", "panel land");
   box.appendChild(el("h2", null, heading));
   if (withBrowse){
-    box.appendChild(el("p", null, "The question was not sent. The shelves and the "
-      + "subject index are still on this page. Open Browse and read the books."));
-    var b = el("button", "go", "Browse");
+    box.appendChild(el("p", null, "The question was not sent, so nothing was lost. "
+      + "The shelves and the subject index are still on this page. Open Browse and "
+      + "read the books."));
+    var b = el("button", "go", "Browse the shelves");
     b.type = "button";
     b.addEventListener("click", openBrowse);
     box.appendChild(b);
@@ -710,7 +924,7 @@ function unreachableNode(heading, withBrowse){
 }
 
 function serverNode(){
-  var box = el("div", "panel");
+  var box = el("div", "panel land");
   box.appendChild(el("h2", null, "This page cannot reach the server."));
   box.appendChild(el("p", null, "The page is still here. The answers are not. Start "
     + "LAST LIGHT on the Tiiny again, or reload this page."));
@@ -718,31 +932,36 @@ function serverNode(){
 }
 
 function plainPanel(heading, body){
-  var box = el("div", "panel");
+  var box = el("div", "panel land");
   box.appendChild(el("h2", null, heading));
   if (body) box.appendChild(el("p", null, body));
   return box;
 }
 
-function place(node){
+// One result, two places: the reading surface and the margin beside it. Every
+// call clears both, so a stale shelf never stands beside a new answer.
+function place(node, aside){
   var slot = $("result");
   slot.textContent = "";
   slot.appendChild(node);
+  var rail = $("sources");
+  rail.textContent = "";
+  if (aside) rail.appendChild(aside);
+  rail.hidden = !aside;
   // A keyboard and a screen reader both land on the answer, not back on the input.
   slot.focus();
 }
 
 /* --------------------------------------------------------------- the asking */
 
-// The pinned bar leaves the flow, so the view has to hold the space back or the
-// cost line sits under it for good. Measured rather than guessed, because the
-// bar is two lines tall on a narrow phone and one on a wide one.
+// The ask bar leaves the flow on a phone, so the view has to hold the space
+// back or the last line sits under it for good. Measured rather than guessed,
+// because the bar grows with the safe-area inset.
 function makeRoom(){
   var view = $("view-ask");
   var form = $("askform");
-  var pinned = matchMedia("(max-width:640px)").matches
-    && form.classList.contains("pinned");
-  view.style.paddingBottom = pinned ? (form.offsetHeight + 24) + "px" : "";
+  view.style.paddingBottom = matchMedia(PHONE).matches
+    ? (form.offsetHeight + 24) + "px" : "";
 }
 
 function settle(){
@@ -787,7 +1006,6 @@ function submitAsk(ev){
   go.textContent = "Asking";
   go.setAttribute("aria-disabled", "true");
   $("hint").hidden = true;
-  $("askform").classList.add("pinned");
   // The question stays in the box to be edited. The placeholder only speaks if
   // the box is cleared, and by then the first answer is already on screen.
   input.placeholder = "ask another";
@@ -795,16 +1013,17 @@ function submitAsk(ev){
 
   flight = new AbortController();
   askWait = waiting(ASK_STEPS, stopAsk);
-  place(askWait.node);
+  place(askWait.node, askWait.aside);
 
   // No client timeout under the server's own, so a slow answer is never cut off.
   call("/api/ask", {method:"POST", headers:{"Content-Type":"application/json"},
                     body:JSON.stringify({q:text}), signal:flight.signal})
     .then(function(r){
       settle();
-      if (r.refused === true) place(refusalPanel(r));
-      else if ("via" in r) place(entityAnswer(r));
-      else place(modelAnswer(r));
+      var out = r.refused === true ? refusalPanel(r)
+              : "via" in r ? entityAnswer(r)
+              : modelAnswer(r);
+      place(out.main, out.aside);
     })
     .catch(function(err){
       if (err.name === "AbortError") return;    // stopAsk already painted
@@ -827,6 +1046,7 @@ var indexShelf = "";    // "" is the ALL chip
 function showAsk(){
   $("view-browse").hidden = true;
   $("view-ask").hidden = false;
+  makeRoom();
 }
 
 function openBrowse(){
@@ -899,7 +1119,9 @@ function showBooks(shelf){
   call("/api/books?shelf=" + encodeURIComponent(shelf.name)).then(function(d){
     var total = shelfTotal(d.shelf);
     var count = el("p", "cost tally");
-    var list = el("div");
+    // The same two-column index the subjects use. A shelf of 109 titles down one
+    // 1,200px column puts the page count a hand's width from the book.
+    var list = el("div", "index");
     var filter = null;
 
     function paint(){
@@ -934,6 +1156,7 @@ function showBooks(shelf){
       filter.type = "text";
       filter.placeholder = "filter by title";
       filter.autocomplete = "off";
+      filter.setAttribute("aria-label", "Filter this shelf by title");
       filter.addEventListener("input", paint);
       body.appendChild(filter);
     }
@@ -977,6 +1200,7 @@ function showIndex(){
     filter.type = "text";
     filter.placeholder = "filter the index";
     filter.autocomplete = "off";
+    filter.setAttribute("aria-label", "Filter the subject index");
     var count = el("p", "cost tally");
     var list = el("div", "index");
 
@@ -1032,6 +1256,7 @@ function showSubject(name){
     showIndex();
   });
   body.appendChild(subjWait.node);
+  body.appendChild(subjWait.aside);
 
   call("/api/subject?name=" + encodeURIComponent(name), {signal:run.signal})
     .then(function(d){
@@ -1048,8 +1273,9 @@ function showSubject(name){
       // The same dead numbering as the entity path, off the same profile().
       body.appendChild(prose(unmarked(d.answer), []));
       if (d.sources.length){
-        body.appendChild(el("p", "label", "FROM"));
-        d.sources.forEach(function(tag){ body.appendChild(citeRow(null, tag, null)); });
+        body.appendChild(sourceList("From", d.sources.map(function(tag){
+          return {n:null, tag:tag, id:null};
+        })));
       }
     })
     .catch(function(err){
@@ -1065,14 +1291,24 @@ function showSubject(name){
 $("askform").addEventListener("submit", submitAsk);
 window.addEventListener("resize", makeRoom);
 $("open-browse").addEventListener("click", openBrowse);
+// An example puts its words in the box and hands the box back. It never asks on
+// somebody's behalf: the question is theirs to send.
+Array.prototype.forEach.call(document.querySelectorAll(".eg"), function(b){
+  b.addEventListener("click", function(){
+    var input = $("q");
+    input.value = b.textContent;
+    input.focus();
+  });
+});
 document.addEventListener("keydown", function(e){
   if (e.key === "Escape") showAsk();
 });
 
 // A hardware keyboard gets the caret. A phone does not, because a keyboard
-// thrown over the status line stops the person reading what is on the device.
+// thrown over the shelf line stops the person reading what is on the device.
 if (matchMedia("(pointer:fine)").matches) $("q").focus();
 
+makeRoom();
 loadHealth();
 
 if (DEMO === "answer" || DEMO === "refused" || DEMO === "waiting"){

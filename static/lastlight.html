@@ -1,0 +1,1013 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>LAST LIGHT</title>
+<style>
+/* One file, no network but the Tiiny. The box this runs on has no internet, so
+   every font is a system font, every colour is written here, and nothing is
+   fetched that is not an answer. */
+:root{
+  --ground:#0B0A08;
+  --well:#16130E;
+  --panel:#1C1812;
+  --hover:#211C15;
+  --ink:#F2E8D5;
+  --quiet:#D4C7B1;
+  --amber:#FFC15C;
+  --focus:#FFCB6B;
+  --rule:#7A6642;
+  --rule-hi:#9A845A;
+  --lamp:rgba(255,193,92,0.075);
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,"Times New Roman",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  color-scheme:dark;
+}
+/* No prefers-color-scheme and no toggle. A white flash from a phone at three in
+   the morning costs the reader their night vision, and there is no case where
+   this product should be light. */
+*{box-sizing:border-box;max-width:100%}
+/* The two views are swapped with the hidden attribute, and both of them set a
+   display of their own, which would otherwise outrank it. */
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font:19px/1.5 var(--sans)}
+
+/* The lamp. It does not move and it does not pulse. It is the only ornament. */
+:root::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(120% 90% at 50% 24%,var(--lamp),rgba(255,193,92,0) 62%)}
+
+.wrap{max-width:760px;margin:0 auto;padding-inline:20px;
+  display:flex;flex-direction:column;min-height:100svh}
+
+header{display:flex;align-items:flex-start;gap:16px;padding-block:30px 0}
+.brand{flex:1;min-width:0}
+h1{margin:0;font:40px var(--serif);font-weight:400;letter-spacing:.14em;color:var(--ink)}
+.tag{margin:8px 0 0;font:italic 21px var(--serif);color:var(--amber)}
+
+button{font:19px var(--sans);cursor:pointer}
+.ghost{flex:none;min-height:48px;padding:0 20px;background:transparent;
+  border:1.5px solid var(--rule);border-radius:6px;color:var(--ink)}
+.ghost:hover,.ghost:active{background:var(--hover);border-color:var(--rule-hi)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+
+.status{margin:20px 0 0;font:19px var(--sans);color:var(--quiet)}
+.status.band{background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--amber);border-radius:6px;padding:16px;color:var(--ink)}
+.status.band span{display:block}
+.status.band span + span{margin-top:6px}
+
+#view-ask{flex:1;display:flex;flex-direction:column;padding-block:0 44px}
+.askblock{display:flex;gap:12px;padding-block:34px 0}
+#q{flex:1;min-width:0;min-height:64px;padding:18px 20px;font:22px var(--serif);
+  color:var(--ink);background:var(--well);border:1.5px solid var(--rule);
+  border-radius:6px;caret-color:var(--amber)}
+#q::placeholder{color:var(--quiet);opacity:1}
+.go{flex:none;min-height:64px;padding:0 34px;background:var(--amber);color:var(--ground);
+  border:0;border-radius:6px;font:600 19px var(--sans)}
+.hint{margin:22px 0 0;max-width:34em;font:19px var(--sans);color:var(--quiet)}
+
+#result{outline:none}
+#result:focus{outline:none}
+.sheet{margin-top:28px;padding-top:28px;border-top:1px solid var(--rule)}
+.echo{margin:0 0 18px;font:20px var(--serif);color:var(--quiet);overflow-wrap:anywhere}
+.answer{margin:18px 0 0;max-width:34em;font:23px/1.55 var(--serif);color:var(--ink);
+  overflow-wrap:anywhere}
+.answer p{margin:0 0 .7em}
+.answer p:last-child{margin-bottom:0}
+.label{margin:28px 0 6px;font:18px var(--sans);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--amber)}
+.cost{margin:20px 0 0;font:19px var(--sans);color:var(--quiet)}
+.said{margin:0 0 14px;font:19px var(--sans);color:var(--quiet);max-width:34em}
+
+/* A citation mark is 16px, the one thing on the page under 18px, and it is never
+   the only way to reach a passage: the 56px row below it is the real target. The
+   ::after gives the mark a 44px hit area without growing the line box. */
+.mark{position:relative;color:var(--amber);text-decoration:underline;
+  text-decoration-thickness:2px;text-underline-offset:2px;font-size:.7em}
+.mark sup{font-size:1em}
+.mark::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;
+  transform:translate(-50%,-50%)}
+.uncited{color:var(--quiet)}
+
+.cite{display:flex;align-items:baseline;min-height:56px;padding-block:12px;
+  border-top:1px solid var(--rule);scroll-margin-top:24px}
+.cite .n{flex:none;width:44px;font:19px var(--sans);color:var(--amber)}
+.cite .t{flex:1;min-width:0;font:20px var(--serif);color:var(--ink);overflow-wrap:break-word}
+.cite .w{flex:none;padding-left:16px;font:19px var(--sans);color:var(--quiet)}
+.cite:target{outline:2px solid var(--amber);outline-offset:6px}
+
+.panel{margin-top:28px;padding:24px;background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--amber);border-radius:6px}
+.panel h2{margin:0 0 14px;font:26px var(--serif);font-weight:400;color:var(--ink)}
+.panel p{margin:0 0 14px;max-width:34em;font:19px var(--sans);color:var(--ink)}
+/* .panel p carries more weight than the shared classes, so the two that appear
+   inside a panel have to say so here or they lose their colour and their air. */
+.panel p.said{color:var(--quiet)}
+.panel p.label{margin:26px 0 6px}
+.panel p.cost{margin:18px 0 0}
+.panel .go{margin-top:6px;min-height:56px}
+
+.wait{margin-top:28px;padding-top:28px;border-top:1px solid var(--rule)}
+.step{display:flex;align-items:center;gap:12px;min-height:32px;
+  font:19px var(--sans);color:var(--ink)}
+.dot{flex:none;width:10px;height:10px;background:var(--amber)}
+.step.now .dot{animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:.45}50%{opacity:1}}
+.step .at{margin-left:auto;color:var(--quiet)}
+.clock{margin:14px 0 0;font:19px var(--sans);color:var(--quiet)}
+.stop{margin-top:16px;min-height:56px;padding:0 24px;background:transparent;
+  border:1.5px solid var(--rule);border-radius:6px;color:var(--quiet)}
+.stop:hover,.stop:active{border-color:var(--rule-hi)}
+
+#view-browse{flex:1;padding-block:26px 44px}
+.bar{display:flex;align-items:center;gap:16px;min-height:48px;flex-wrap:wrap}
+.crumb{font:18px var(--sans);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--amber);overflow-wrap:anywhere}
+.cards{display:grid;gap:16px;margin-top:24px}
+.card{display:block;width:100%;text-align:left;min-height:120px;padding:24px;
+  background:var(--well);border:1.5px solid var(--rule);border-radius:6px}
+.card:hover,.card:active{background:var(--hover);border-color:var(--rule-hi)}
+.card .t{display:block;font:26px var(--serif);color:var(--ink)}
+.card .m{display:block;margin-top:8px;font:19px var(--sans);color:var(--quiet)}
+.row{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline;width:100%;
+  min-height:56px;padding-block:12px;border-top:1px solid var(--rule);text-align:left}
+.row .t{flex:1 1 auto;min-width:0;font:21px var(--serif);color:var(--ink);
+  overflow-wrap:break-word}
+.row .m{flex:none;font:19px var(--sans);color:var(--quiet)}
+button.row{background:transparent;border-left:0;border-right:0;border-bottom:0}
+button.row:hover,button.row:active{background:var(--hover);border-top-color:var(--rule-hi)}
+.chips{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}
+.chip{min-height:56px;padding:0 20px;background:transparent;border:1.5px solid var(--rule);
+  border-radius:6px;color:var(--ink)}
+.chip:hover,.chip:active{background:var(--hover);border-color:var(--rule-hi)}
+.chip.on{background:var(--amber);border-color:var(--amber);color:var(--ground)}
+.filter{display:block;width:100%;min-height:56px;padding:0 18px;font:19px var(--sans);
+  color:var(--ink);background:var(--well);border:1.5px solid var(--rule);
+  border-radius:6px;margin-top:22px}
+.filter::placeholder{color:var(--quiet);opacity:1}
+.filter.pin{position:sticky;top:0;z-index:2;background:var(--ground);border:0;
+  border-bottom:1px solid var(--rule);border-radius:0}
+.tally{margin-bottom:8px}
+.index{display:grid;grid-template-columns:1fr}
+.subject{margin:26px 0 6px;font:28px var(--serif);color:var(--ink);overflow-wrap:anywhere}
+
+@media (min-width:641px){
+  .cards{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+}
+@media (min-width:901px){
+  .index{grid-template-columns:1fr 1fr;column-gap:32px}
+}
+@media (max-width:640px){
+  h1{font-size:30px}
+  .tag{font-size:19px}
+  #q{font-size:21px;min-height:60px}
+  /* Before the first question the ask block sinks into the thumb arc. After it,
+     the block pins to the bottom so a second question never needs a scroll. */
+  .askblock{flex-direction:column;margin-top:auto}
+  .go{width:100%;min-height:56px;padding:0}
+  /* Fixed, not sticky. The ask block comes before the answer in the DOM, and a
+     bottom-sticky box only stops itself falling below the scrollport: it never
+     pulls itself down to one. Fixed puts the second question under the thumb,
+     and the view carries a matching pad so the last line is never trapped. */
+  .askblock.pinned{position:fixed;left:0;right:0;bottom:0;z-index:3;margin:0;
+    padding:14px 20px calc(14px + env(safe-area-inset-bottom));
+    background:var(--ground);border-top:1px solid var(--rule)}
+  .panel{padding:20px}
+  .panel h2{font-size:24px}
+  .card .t{font-size:24px}
+}
+@media (max-width:480px){
+  /* The locator drops under the title rather than being clipped. A page number
+     that cannot be read is the same as no page number. */
+  .cite{flex-wrap:wrap}
+  .cite .w{flex-basis:100%;padding-left:44px;padding-top:2px}
+  .row{flex-wrap:wrap}
+  .row .m{flex-basis:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none;scroll-behavior:auto}
+  .step.now .dot{animation:none;opacity:1}
+}
+@media print{
+  *{background:#FFFFFF !important;color:#111111 !important}
+  header,#status,.askblock,.hint,:root::before{display:none}
+  body{font-family:var(--serif)}
+  .answer{font-size:12pt}
+}
+</style>
+</head><body>
+<div class="wrap">
+
+<header>
+  <div class="brand">
+    <h1>LAST LIGHT</h1>
+    <p class="tag">an off-grid digital grimoire</p>
+  </div>
+  <button type="button" id="open-browse" class="ghost">Browse</button>
+</header>
+
+<p id="status" class="status">Reading the shelf list.</p>
+
+<section id="view-ask">
+  <form id="askform" class="askblock">
+    <input id="q" type="text" name="q" maxlength="500" autocomplete="off"
+           autocapitalize="sentences" enterkeyhint="send"
+           placeholder="how do I stop severe bleeding">
+    <button type="submit" id="go" class="go">Ask</button>
+  </form>
+  <p id="hint" class="hint">The Archivist answers out of the books on this device. It names the book and the page, or it says the shelf does not cover it.</p>
+  <section id="result" aria-live="polite" tabindex="-1"></section>
+</section>
+
+<section id="view-browse" hidden></section>
+
+</div>
+<script>
+(function(){
+"use strict";
+
+// Fixtures behind ?demo=, so every state on this page can be read and corrected
+// on a machine that has no Tiiny in front of it. The live page never reaches
+// them: without the parameter every call is a same-origin fetch.
+var DEMO = new URLSearchParams(location.search).get("demo") || "";
+
+var HEALTH = {
+  corpus:{documents:6043, chunks:27746, vectors:27746, subjects:2500},
+  shelves:[{name:"zimgit survival shelf", documents:109, pages:12605},
+           {name:"Vikidia", documents:5934, pages:5934}],
+  device:{reachable:true, chat_model:"Qwen/Qwen3-8B"}
+};
+var ANSWER = {
+  q:"how do I stop severe bleeding", secs:12.4, refused:false, cited:[1,2,3],
+  answer:"Press hard on the wound with a clean cloth and keep pressing until the "
+    + "bleeding stops.[1] Do not lift the cloth to look. If blood soaks through, put "
+    + "a second cloth on top of the first.[2]\n\nRaise the limb above the heart if it "
+    + "is not broken, and keep pressing for a full ten minutes by the clock.[3] A "
+    + "tourniquet is a last resort on a limb you have already decided to lose.[7]",
+  sources:["SAS Survival Handbook · pp439-440",
+           "Where There Is No Doctor · p82",
+           "A Book for Midwives · pp220-221",
+           "War Surgery in Afghanistan and Iraq · pp96-97",
+           "Nuclear War Survival Skills · p188",
+           "Foxfire 2 · pp310-311"],
+  model:"Qwen/Qwen3-8B"
+};
+var REFUSED = {
+  q:"how do I reset my Cloudflare API token", secs:1.3, refused:true, cited:[],
+  answer:"Nothing I retrieved covers that.\n  (an answer was produced but cited no "
+    + "passage, so it was withheld)",
+  sources:["FlipaClip · Vikidia", "QR-code · Vikidia",
+           "Computer science · Vikidia", "Password · Vikidia",
+           "Internet · Vikidia", "Server · Vikidia"],
+  model:"Qwen/Qwen3-8B"
+};
+var BOOKS = {shelf:"zimgit survival shelf", books:[
+  {doc_id:11, title:"A Book for Midwives", pages:544},
+  {doc_id:12, title:"Foxfire 1", pages:498},
+  {doc_id:13, title:"Foxfire 2", pages:512},
+  {doc_id:14, title:"Foxfire 3", pages:506},
+  {doc_id:15, title:"Nuclear War Survival Skills", pages:510},
+  {doc_id:16, title:"SAS Survival Handbook", pages:576},
+  {doc_id:17, title:"War Surgery in Afghanistan and Iraq", pages:488},
+  {doc_id:18, title:"Where There Is No Doctor", pages:503}]};
+var SUBJECTS = {subjects:[
+  {name:"influenza", documents:14, mentions:184},
+  {name:"radiological", documents:9, mentions:141},
+  {name:"suture", documents:11, mentions:97},
+  {name:"antiviral", documents:6, mentions:88},
+  {name:"quarantine", documents:12, mentions:76},
+  {name:"fallout", documents:8, mentions:212}]};
+var SUBJECT = {name:"suture", docs:11, mentions:97, read:30,
+  sources:["War Surgery in Afghanistan and Iraq · zimgit survival shelf",
+           "Where There Is No Doctor · zimgit survival shelf",
+           "A Book for Midwives · zimgit survival shelf"],
+  answer:"A suture is a stitch that closes a wound, and the books treat it as a "
+    + "decision before it is a technique. Close a wound only when it is clean and "
+    + "less than a day old; a dirty or older wound is packed open and watched."};
+
+var ASK_STEPS = [{at:0, label:"Reading the shelf"},
+                 {at:700, label:"Asking the Archivist"},
+                 {at:20000, label:"Checking every citation"}];
+// profile() runs no citation guard, so this script has no citation step. The
+// screen must not claim a check the device does not perform.
+var SUBJECT_STEPS = [{at:0, label:"Reading every passage that names it"},
+                     {at:700, label:"Asking the Archivist"}];
+
+var health = null;      // the last good /api/health, read by three screens
+var healthFails = 0;    // two in a row before the screen says the server is gone
+var shelfList = null;   // nothing is fetched for Browse until Browse is opened
+var flight = null;      // the AbortController of whatever is in the air
+var askWait = null;     // the waiting block under the ask box, if one is up
+var subjWait = null;    // the waiting block under a subject, if one is up
+
+function $(id){ return document.getElementById(id); }
+
+function esc(s){
+  return String(s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+
+// Grouping is written out rather than left to toLocaleString, which follows the
+// device locale and would print the same corpus two ways on two phones.
+function num(n){
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+$)/g, ",");
+}
+
+function secs(n){
+  var w = Math.round(n);
+  return w + (w === 1 ? " second" : " seconds");
+}
+
+function el(tag, cls, text){
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+// Every fetch goes through here, so the sentence a failure shows is written
+// once. The status code rides along on the error because 503 is the one code
+// with a screen of its own.
+function call(url, opt){
+  if (DEMO) return demo(url);
+  return fetch(url, opt).then(function(r){
+    return r.json().then(function(j){
+      if (!r.ok){
+        var e = new Error(j.error || "The server answered with an error.");
+        e.status = r.status;
+        throw e;
+      }
+      return j;
+    });
+  });
+}
+
+function demo(url){
+  function soon(v){ return new Promise(function(res){ setTimeout(function(){ res(v); }, 60); }); }
+  if (url === "/api/health"){
+    if (DEMO === "unreachable"){
+      return soon({corpus:HEALTH.corpus, shelves:HEALTH.shelves,
+                   device:{reachable:false, chat_model:null}});
+    }
+    return soon(HEALTH);
+  }
+  if (url === "/api/ask"){
+    if (DEMO === "unreachable"){
+      return new Promise(function(_, rej){
+        setTimeout(function(){
+          var e = new Error("The Archivist cannot reach the Tiiny.");
+          e.status = 503;
+          rej(e);
+        }, 60);
+      });
+    }
+    if (DEMO === "waiting") return new Promise(function(){});
+    return soon(DEMO === "refused" ? REFUSED : ANSWER);
+  }
+  if (url === "/api/shelves") return soon(HEALTH.shelves);
+  if (url.indexOf("/api/books") === 0){
+    var want = decodeURIComponent(url.split("shelf=")[1] || BOOKS.shelf);
+    return soon({shelf:want, books:BOOKS.books});
+  }
+  if (url.indexOf("/api/subjects") === 0) return soon(SUBJECTS);
+  if (url.indexOf("/api/subject?") === 0) return soon(SUBJECT);
+  return Promise.reject(new Error("not found"));
+}
+
+/* ------------------------------------------------------------------ health */
+
+function shelfWords(s){
+  if (/survival/i.test(s.name)) return num(s.documents) + " books on the survival shelf";
+  if (/vikidia/i.test(s.name)) return "an encyclopaedia";
+  return num(s.documents) + " books on the " + s.name + " shelf";
+}
+
+function shelfPlace(s){
+  if (/survival/i.test(s.name)) return "the survival shelf";
+  if (/vikidia/i.test(s.name)) return "the encyclopaedia";
+  return "the " + s.name + " shelf";
+}
+
+function paintStatus(){
+  var box = $("status");
+  box.className = "status";
+  if (!health) return;
+  if (health.device.reachable === false){
+    box.className = "status band";
+    box.textContent = "The Tiiny is not answering. Browsing still works.";
+    return;
+  }
+  if (health.device.chat_model === null){
+    box.textContent = "The Tiiny is there and no answer model is loaded. Browsing still works.";
+    return;
+  }
+  var line = health.shelves.map(shelfWords).join(", and ") + ".";
+  // A chunk with no vector cannot be found, and the person is entitled to know
+  // how much of the shelf a question actually reaches.
+  if (health.corpus.vectors !== health.corpus.chunks){
+    line += " " + num(health.corpus.vectors) + " of " + num(health.corpus.chunks)
+          + " passages are searchable.";
+  }
+  box.textContent = line;
+}
+
+function loadHealth(second){
+  return call("/api/health").then(function(j){
+    health = j;
+    healthFails = 0;
+    paintStatus();
+  }).catch(function(){
+    healthFails += 1;
+    var box = $("status");
+    if (healthFails < 2){
+      box.className = "status";
+      box.textContent = "The shelf list is not loading. Ask anyway, or reload.";
+      // One retry, never a loop and never a backoff. Two consecutive failures
+      // are what repaints the screen, so a single dropped packet on a wifi link
+      // does not tell someone their archive is gone.
+      if (!second) setTimeout(function(){ loadHealth(true); }, 1200);
+      return;
+    }
+    box.className = "status band";
+    box.textContent = "";
+    box.appendChild(el("span", null, "This page cannot reach the server."));
+    box.appendChild(el("span", null, "The page is still here. The answers are not. "
+      + "Start LAST LIGHT on the Tiiny again, or reload this page."));
+    // The shelf counts are left off rather than drawn as zeros. A zero here
+    // would be a lie about the corpus.
+  });
+}
+
+/* ----------------------------------------------------------------- waiting */
+
+// There is no spinner anywhere in this file. A progress bar needs a denominator
+// and none exists: the same class of question has been measured at 5.8 and at
+// 22.2 seconds. The wait is paid for with a log of what the device is doing.
+function waiting(steps, onStop){
+  var t0 = Date.now();
+  var marks = [];       // the step timeouts, cleared by the cancel this returns
+  var beat = 0;
+  var box = el("div", "wait");
+  var list = el("div");
+  var clock = el("p", "clock");
+  var stop = el("button", "stop", "Stop");
+  stop.type = "button";
+  stop.addEventListener("click", onStop);
+  box.appendChild(list);
+  box.appendChild(clock);
+  box.appendChild(stop);
+
+  var current = null;
+  function show(label){
+    if (current){
+      current.className = "step";
+      // A step that has passed carries the second it finished, so a done step
+      // leaves evidence instead of just scrolling away.
+      current.querySelector(".at").textContent =
+        Math.floor((Date.now() - t0) / 1000) + " s";
+    }
+    var row = el("div", "step now");
+    row.appendChild(el("span", "dot"));
+    row.appendChild(el("span", "what", label));
+    row.appendChild(el("span", "at"));
+    list.appendChild(row);
+    current = row;
+  }
+  show(steps[0].label);
+  steps.slice(1).forEach(function(s){
+    marks.push(setTimeout(function(){ show(s.label); }, s.at));
+  });
+
+  function paintClock(){
+    var n = Math.floor((Date.now() - t0) / 1000);
+    clock.textContent = n < 35 ? secs(n) + ". Answers take 5 to 40 seconds."
+      : n < 60 ? secs(n) + ". The longest answers take about 40 seconds."
+      : secs(n) + ". This is longer than usual. The Tiiny is still working.";
+  }
+  paintClock();
+  // The clock is information, not decoration, so reduced motion leaves it alone.
+  beat = setInterval(paintClock, 1000);
+  return {node:box, cancel:function(){
+    marks.forEach(clearTimeout);
+    marks = [];
+    if (beat){ clearInterval(beat); beat = 0; }
+  }};
+}
+
+/* ------------------------------------------------------------- the answers */
+
+function prose(text, cited){
+  var box = el("div", "answer");
+  String(text).split(/\n\s*\n/).forEach(function(para){
+    var p = document.createElement("p");
+    p.innerHTML = marks(esc(para.replace(/\n/g, " ")), cited);
+    box.appendChild(p);
+  });
+  return box;
+}
+
+// A [n] the guard did not accept is left as plain quiet prose, never as a link.
+// archivist computes the hallucinated set and never returns it, so this is the
+// only way a reader can see that the Archivist pointed at nothing.
+function marks(html, cited){
+  return html.replace(/\[(\d+)\]/g, function(whole, n){
+    return cited.indexOf(Number(n)) >= 0
+      ? '<a class="mark" href="#cite-' + n + '"><sup>' + n + '</sup></a>'
+      : '<span class="uncited">' + whole + '</span>';
+  });
+}
+
+// cite() writes "{title} · {where}", and where is a page range on a book and a
+// shelf name on a wiki article. Neither is assumed.
+function splitTag(s){
+  var i = String(s).indexOf(" · ");
+  return i < 0 ? [String(s), ""] : [String(s).slice(0, i), String(s).slice(i + 3)];
+}
+
+function locator(w){
+  return /^pp?\d/.test(w) ? w.replace(/^(pp?)/, "$1 ") : w;
+}
+
+function citeRow(n, tag, id){
+  var parts = splitTag(tag);
+  var row = el("div", "cite");
+  if (id) row.id = id;
+  if (n !== null) row.appendChild(el("span", "n", "[" + n + "]"));
+  row.appendChild(el("span", "t", parts[0]));
+  if (parts[1]) row.appendChild(el("span", "w", locator(parts[1])));
+  return row;
+}
+
+function echo(q){ return el("p", "echo", q); }
+
+function modelAnswer(r){
+  var box = el("div", "sheet");
+  box.appendChild(echo(r.q));
+  box.appendChild(prose(r.answer, r.cited));
+  if (r.cited.length){
+    box.appendChild(el("p", "label", "FROM"));
+    r.cited.forEach(function(n){
+      var tag = r.sources[n - 1];
+      // cited is 1-based into sources. A row that is not there is dropped
+      // rather than taking the whole answer down with it.
+      if (typeof tag === "string") box.appendChild(citeRow(n, tag, "cite-" + n));
+    });
+  } else {
+    box.appendChild(el("p", "cost", "No passage is cited."));
+  }
+  box.appendChild(el("p", "cost", secs(r.secs) + ". The Archivist cited "
+    + r.cited.length + " of the " + r.sources.length + " passages it read."));
+  return box;
+}
+
+// The entity path is not a different mode and is not labelled as one. It is how
+// "what is a deadfall" gets answered, and it looks like an answer.
+function entityAnswer(r){
+  var box = el("div", "sheet");
+  box.appendChild(echo(r.q));
+  box.appendChild(prose(r.answer, r.cited));
+  if (r.sources.length){
+    box.appendChild(el("p", "label", "READ ACROSS " + r.via.toUpperCase()));
+    r.sources.forEach(function(tag){ box.appendChild(citeRow(null, tag, null)); });
+  }
+  box.appendChild(el("p", "cost", secs(r.secs)
+    + ". The Archivist read every passage that names it."));
+  return box;
+}
+
+function hitTag(h){
+  return h.title + " · " + (h.pages && h.pages.length === 2
+    ? (h.pages[0] === h.pages[1] ? "p" + h.pages[0]
+                                 : "pp" + h.pages[0] + "-" + h.pages[1])
+    : h.source);
+}
+
+// A refusal is a result, not a failure: same slot, same ceremony, no red.
+function refusalPanel(r){
+  var box = el("div", "panel");
+  box.appendChild(echo(r.q));
+  // The archivist's own prompt forbids claiming the archive lacks something,
+  // only that the passages it read do not cover it. This heading is that rule
+  // applied to the refusal itself.
+  box.appendChild(el("h2", null, "Nothing it read covers this."));
+  box.appendChild(el("p", null, "The Archivist searched the shelf and read the "
+    + "passages below. None of them answer this question. It does not guess. Ask it "
+    + "in different words, or open one of these books."));
+  if (health && health.shelves){
+    box.appendChild(el("p", "said",
+      "It searched " + health.shelves.map(shelfPlace).join(" and ") + "."));
+  }
+  // The guard's own confession, in the guard's own words. It is the one place
+  // the product explains its rule, so it is passed through rather than rewritten.
+  var nl = String(r.answer).indexOf("\n");
+  if (nl >= 0){
+    var held = String(r.answer).slice(nl + 1).trim()
+      .replace(/^\(/, "").replace(/\)$/, "").trim();
+    if (held){
+      box.appendChild(el("p", "said", held.charAt(0).toUpperCase() + held.slice(1) + "."));
+    }
+  }
+  // Which key is present decides this, never a fallback chain: ask() returns
+  // three genuinely different objects.
+  var rows = [];
+  if (Array.isArray(r.sources)) rows = r.sources.slice(0, 3);
+  else if (Array.isArray(r.hits)) rows = r.hits.slice(0, 3).map(hitTag);
+  if (rows.length){
+    box.appendChild(el("p", "label", "IT READ"));
+    rows.forEach(function(tag){ box.appendChild(citeRow(null, tag, null)); });
+  }
+  box.appendChild(el("p", "cost", secs(r.secs) + "."));
+  return box;
+}
+
+function unreachableNode(heading, withBrowse){
+  var box = el("div", "panel");
+  box.appendChild(el("h2", null, heading));
+  if (withBrowse){
+    box.appendChild(el("p", null, "The question was not sent. The shelves and the "
+      + "subject index are still on this page. Open Browse and read the books."));
+    var b = el("button", "go", "Browse");
+    b.type = "button";
+    b.addEventListener("click", openBrowse);
+    box.appendChild(b);
+  }
+  return box;
+}
+
+function serverNode(){
+  var box = el("div", "panel");
+  box.appendChild(el("h2", null, "This page cannot reach the server."));
+  box.appendChild(el("p", null, "The page is still here. The answers are not. Start "
+    + "LAST LIGHT on the Tiiny again, or reload this page."));
+  return box;
+}
+
+function plainPanel(heading, body){
+  var box = el("div", "panel");
+  box.appendChild(el("h2", null, heading));
+  if (body) box.appendChild(el("p", null, body));
+  return box;
+}
+
+function place(node){
+  var slot = $("result");
+  slot.textContent = "";
+  slot.appendChild(node);
+  // A keyboard and a screen reader both land on the answer, not back on the input.
+  slot.focus();
+}
+
+/* --------------------------------------------------------------- the asking */
+
+// The pinned bar leaves the flow, so the view has to hold the space back or the
+// cost line sits under it for good. Measured rather than guessed, because the
+// bar is two lines tall on a narrow phone and one on a wide one.
+function makeRoom(){
+  var view = $("view-ask");
+  var form = $("askform");
+  var pinned = matchMedia("(max-width:640px)").matches
+    && form.classList.contains("pinned");
+  view.style.paddingBottom = pinned ? (form.offsetHeight + 24) + "px" : "";
+}
+
+function settle(){
+  if (askWait){ askWait.cancel(); askWait = null; }
+  var input = $("q");
+  input.readOnly = false;
+  var go = $("go");
+  go.textContent = "Ask";
+  go.removeAttribute("aria-disabled");
+  flight = null;
+}
+
+// Nothing here claims the device stopped working, because it has not. Only the
+// page stopped listening, and the question is still in the box.
+function stopAsk(){
+  if (flight) flight.abort();
+  if (askWait){ askWait.cancel(); askWait = null; }
+  $("hint").hidden = false;
+  place(el("p", "cost", "Stopped. The question is still in the box."));
+}
+
+function submitAsk(ev){
+  ev.preventDefault();
+  var input = $("q");
+  var text = input.value.trim();
+  if (!text) return;
+
+  // readonly rather than disabled, so the question stays readable and selectable
+  // through a forty second wait.
+  input.readOnly = true;
+  input.blur();
+  var go = $("go");
+  go.textContent = "Asking";
+  go.setAttribute("aria-disabled", "true");
+  $("hint").hidden = true;
+  $("askform").classList.add("pinned");
+  // The question stays in the box to be edited. The placeholder only speaks if
+  // the box is cleared, and by then the first answer is already on screen.
+  input.placeholder = "ask another";
+  makeRoom();
+
+  flight = new AbortController();
+  askWait = waiting(ASK_STEPS, stopAsk);
+  place(askWait.node);
+
+  // No client timeout under the server's own, so a slow answer is never cut off.
+  call("/api/ask", {method:"POST", headers:{"Content-Type":"application/json"},
+                    body:JSON.stringify({q:text}), signal:flight.signal})
+    .then(function(r){
+      settle();
+      if (r.refused === true) place(refusalPanel(r));
+      else if ("via" in r) place(entityAnswer(r));
+      else place(modelAnswer(r));
+    })
+    .catch(function(err){
+      if (err.name === "AbortError") return;    // stopAsk already painted
+      settle();
+      if (err.status === 503){
+        // The server's own sentence is the sentence on screen, so there is no
+        // second copy of it here to drift.
+        place(unreachableNode(err.message, true));
+        loadHealth();
+      } else {
+        place(serverNode());
+      }
+    });
+}
+
+/* --------------------------------------------------------------- the browse */
+
+var indexShelf = "";    // "" is the ALL chip
+
+function showAsk(){
+  $("view-browse").hidden = true;
+  $("view-ask").hidden = false;
+}
+
+function openBrowse(){
+  $("view-ask").hidden = true;
+  $("view-browse").hidden = false;
+  showShelves();
+}
+
+function bar(backLabel, crumb, onBack){
+  var row = el("div", "bar");
+  var b = el("button", "ghost", backLabel);
+  b.type = "button";
+  b.addEventListener("click", onBack);
+  row.appendChild(b);
+  row.appendChild(el("span", "crumb", crumb));
+  return row;
+}
+
+function card(title, meta, onOpen){
+  var b = el("button", "card");
+  b.type = "button";
+  b.appendChild(el("span", "t", title));
+  b.appendChild(el("span", "m", meta));
+  b.addEventListener("click", onOpen);
+  return b;
+}
+
+function shelfTotal(name){
+  if (!health || !health.shelves) return null;
+  for (var i = 0; i < health.shelves.length; i++){
+    if (health.shelves[i].name === name) return health.shelves[i].documents;
+  }
+  return null;
+}
+
+function showShelves(){
+  var v = $("view-browse");
+  v.textContent = "";
+  v.appendChild(bar("Back to ask", "SHELVES", showAsk));
+  var body = el("div");
+  v.appendChild(body);
+
+  var got = shelfList ? Promise.resolve(shelfList) : call("/api/shelves");
+  got.then(function(list){
+    shelfList = list;
+    var cards = el("div", "cards");
+    list.forEach(function(s){
+      var meta = /vikidia/i.test(s.name)
+        ? num(s.documents) + " articles, plain language"
+        : num(s.documents) + " books, " + num(s.pages) + " pages";
+      cards.appendChild(card(s.name, meta, function(){ showBooks(s); }));
+    });
+    if (health && health.corpus){
+      cards.appendChild(card("Subject index",
+        num(health.corpus.subjects) + " subjects the books name themselves", showIndex));
+    }
+    body.appendChild(cards);
+  }).catch(function(){
+    body.appendChild(serverNode());
+  });
+}
+
+function showBooks(shelf){
+  var v = $("view-browse");
+  v.textContent = "";
+  v.appendChild(bar("Back to shelves", "SHELVES / " + shelf.name.toUpperCase(), showShelves));
+  var body = el("div");
+  v.appendChild(body);
+
+  call("/api/books?shelf=" + encodeURIComponent(shelf.name)).then(function(d){
+    var total = shelfTotal(d.shelf);
+    var count = el("p", "cost tally");
+    var list = el("div");
+    var filter = null;
+
+    function paint(){
+      var q = filter ? filter.value.trim().toLowerCase() : "";
+      var rows = q ? d.books.filter(function(b){
+        return b.title.toLowerCase().indexOf(q) >= 0;
+      }) : d.books;
+      count.textContent = q
+        ? num(rows.length) + " of " + num(d.books.length) + " books match"
+        : num(d.books.length)
+          + (total === null ? "" : " of " + num(total)) + " books, by title.";
+      list.textContent = "";
+      rows.forEach(function(b){
+        // Not a button. No API route returns a book's text, so a row that
+        // looked tappable would be lying about what this page can do.
+        var row = el("div", "row");
+        row.id = "book-" + b.doc_id;
+        row.appendChild(el("span", "t", b.title));
+        row.appendChild(el("span", "m", num(b.pages) + " pages"));
+        list.appendChild(row);
+      });
+    }
+
+    // A title-ordered list of 5,934 articles runs A to Ba and stops. Saying so,
+    // and offering the filter, is the difference between a browse view and a lie.
+    if (total !== null && d.books.length < total){
+      filter = el("input", "filter");
+      filter.type = "text";
+      filter.placeholder = "filter by title";
+      filter.autocomplete = "off";
+      filter.addEventListener("input", paint);
+      body.appendChild(filter);
+    }
+    body.appendChild(count);
+    body.appendChild(list);
+    paint();
+  }).catch(function(err){
+    body.appendChild(plainPanel(err.message, null));
+  });
+}
+
+function showIndex(){
+  var v = $("view-browse");
+  v.textContent = "";
+  v.appendChild(bar("Back to shelves", "SHELVES / SUBJECT INDEX", showShelves));
+  var body = el("div");
+  v.appendChild(body);
+
+  if (health && health.shelves){
+    var chips = el("div", "chips");
+    var all = el("button", "chip" + (indexShelf === "" ? " on" : ""), "ALL");
+    all.type = "button";
+    all.addEventListener("click", function(){ indexShelf = ""; showIndex(); });
+    chips.appendChild(all);
+    health.shelves.forEach(function(s){
+      var c = el("button", "chip" + (indexShelf === s.name ? " on" : ""), s.name);
+      c.type = "button";
+      c.addEventListener("click", function(){ indexShelf = s.name; showIndex(); });
+      chips.appendChild(c);
+    });
+    body.appendChild(chips);
+  }
+
+  // Ordering by documents returns water, ground, side, keep, which is a word
+  // frequency list. Aboutness returns influenza, radiological, suture, which is
+  // the index this screen is meant to be.
+  var url = "/api/subjects?limit=200&order=aboutness"
+    + (indexShelf ? "&shelf=" + encodeURIComponent(indexShelf) : "");
+  call(url).then(function(d){
+    var filter = el("input", "filter pin");
+    filter.type = "text";
+    filter.placeholder = "filter the index";
+    filter.autocomplete = "off";
+    var count = el("p", "cost tally");
+    var list = el("div", "index");
+
+    function paint(){
+      var q = filter.value.trim().toLowerCase();
+      var rows = q ? d.subjects.filter(function(s){
+        return s.name.toLowerCase().indexOf(q) >= 0;
+      }) : d.subjects;
+      count.textContent = q
+        ? num(rows.length) + " of " + num(d.subjects.length) + " subjects match"
+        : num(d.subjects.length) + " subjects the books name themselves.";
+      list.textContent = "";
+      rows.forEach(function(s){
+        var row = el("button", "row");
+        row.type = "button";
+        row.appendChild(el("span", "t", s.name));
+        row.appendChild(el("span", "m",
+          "in " + num(s.documents) + " books, " + num(s.mentions) + " mentions"));
+        row.addEventListener("click", function(){ showSubject(s.name); });
+        list.appendChild(row);
+      });
+    }
+    filter.addEventListener("input", paint);
+    body.appendChild(filter);
+    body.appendChild(count);
+    body.appendChild(list);
+    paint();
+  }).catch(function(){
+    body.appendChild(serverNode());
+  });
+}
+
+function showSubject(name){
+  var v = $("view-browse");
+  v.textContent = "";
+  v.appendChild(bar("Back to the index", "SHELVES / SUBJECT INDEX / " + name.toUpperCase(),
+                    showIndex));
+  var body = el("div");
+  v.appendChild(body);
+
+  // A profile runs the chat model. With the device down there is nothing to ask,
+  // so nothing is sent and the screen says so.
+  if (health && health.device && health.device.reachable === false){
+    body.appendChild(unreachableNode("The Tiiny is not answering. Browsing still works.",
+                                     false));
+    return;
+  }
+
+  var run = new AbortController();
+  subjWait = waiting(SUBJECT_STEPS, function(){
+    run.abort();
+    if (subjWait){ subjWait.cancel(); subjWait = null; }
+    showIndex();
+  });
+  body.appendChild(subjWait.node);
+
+  call("/api/subject?name=" + encodeURIComponent(name), {signal:run.signal})
+    .then(function(d){
+      if (subjWait){ subjWait.cancel(); subjWait = null; }
+      body.textContent = "";
+      if (d.error){
+        body.appendChild(plainPanel("That subject is not in this archive.", d.error));
+        return;
+      }
+      body.appendChild(el("p", "subject", d.name));
+      var line = "In " + num(d.docs) + " books. " + num(d.mentions) + " mentions.";
+      if (d.read !== undefined) line += " " + num(d.read) + " passages read.";
+      body.appendChild(el("p", "cost", line));
+      // profile() produces no citation indices, so no bracket here is linkified.
+      body.appendChild(prose(d.answer, []));
+      if (d.sources.length){
+        body.appendChild(el("p", "label", "FROM"));
+        d.sources.forEach(function(tag){ body.appendChild(citeRow(null, tag, null)); });
+      }
+    })
+    .catch(function(err){
+      if (err.name === "AbortError") return;
+      if (subjWait){ subjWait.cancel(); subjWait = null; }
+      body.textContent = "";
+      body.appendChild(plainPanel("That subject is not in this archive.", err.message));
+    });
+}
+
+/* ----------------------------------------------------------------- wiring */
+
+$("askform").addEventListener("submit", submitAsk);
+window.addEventListener("resize", makeRoom);
+$("open-browse").addEventListener("click", openBrowse);
+document.addEventListener("keydown", function(e){
+  if (e.key === "Escape") showAsk();
+});
+
+// A hardware keyboard gets the caret. A phone does not, because a keyboard
+// thrown over the status line stops the person reading what is on the device.
+if (matchMedia("(pointer:fine)").matches) $("q").focus();
+
+loadHealth();
+
+if (DEMO === "answer" || DEMO === "refused" || DEMO === "waiting"){
+  $("q").value = DEMO === "refused" ? "how do I reset my Cloudflare API token"
+                                    : "how do I stop severe bleeding";
+  setTimeout(function(){ $("askform").requestSubmit(); }, 140);
+} else if (DEMO === "unreachable"){
+  $("q").value = "how do I stop severe bleeding";
+  setTimeout(function(){ $("askform").requestSubmit(); }, 220);
+} else if (DEMO === "browse"){
+  setTimeout(openBrowse, 180);
+} else if (DEMO === "books" || DEMO === "index" || DEMO === "subject"){
+  setTimeout(function(){
+    openBrowse();
+    setTimeout(function(){
+      if (DEMO === "books") showBooks(HEALTH.shelves[1]);
+      else if (DEMO === "index") showIndex();
+      else showSubject("suture");
+    }, 140);
+  }, 180);
+}
+
+})();
+</script>
+</body></html>

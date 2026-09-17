@@ -91,6 +91,8 @@ button{font:19px var(--sans);cursor:pointer}
 .mark::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;
   transform:translate(-50%,-50%)}
 .uncited{color:var(--quiet)}
+.searched{font-family:var(--mono);font-size:12px;color:var(--rule);margin:-6px 0 14px;letter-spacing:.02em}
+
 
 .cite{display:flex;align-items:baseline;min-height:56px;padding-block:12px;
   border-top:1px solid var(--rule);scroll-margin-top:24px}
@@ -541,6 +543,15 @@ function waiting(steps, onStop){
 
 /* ------------------------------------------------------------- the answers */
 
+// What the shelf was actually searched for, when the Archivist rephrased what
+// was said ("I cut my foot" becomes "cut: stop bleeding, clean wound, cover").
+// Shown so a wrong answer can be traced to a wrong search, not left a mystery.
+function searchedLine(text){
+  var d = el("div", "searched");
+  d.textContent = "searched for: " + text;
+  return d;
+}
+
 function prose(text, cited){
   var box = el("div", "answer");
   String(text).split(/\n\s*\n/).forEach(function(para){
@@ -604,6 +615,7 @@ function echo(q){ return el("p", "echo", q); }
 function modelAnswer(r){
   var box = el("div", "sheet");
   box.appendChild(echo(r.q));
+  if (r.searched) box.appendChild(searchedLine(r.searched));
   box.appendChild(prose(r.answer, r.cited));
   if (r.cited.length){
     box.appendChild(el("p", "label", "FROM"));
@@ -626,6 +638,7 @@ function modelAnswer(r){
 function entityAnswer(r){
   var box = el("div", "sheet");
   box.appendChild(echo(r.q));
+  if (r.searched) box.appendChild(searchedLine(r.searched));
   box.appendChild(prose(unmarked(r.answer), r.cited));
   if (r.sources.length){
     box.appendChild(el("p", "label", "READ ACROSS " + r.via.toUpperCase()));

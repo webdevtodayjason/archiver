@@ -79,8 +79,33 @@ given does not cover it. "These passages do not mention X" is honest; \
 Every factual claim carries a citation like [2] naming the passage it came from. \
 Never write a claim without one. Never say "I know" - say "the archive says".
 
+Use only the passages that bear on the question. Never mention a passage to \
+say it does not apply; leave it out. If the person describes an injury, an \
+illness or a danger, tell them what to do, in the order to do it.
+
 Be plain and practical. The person may be frightened, cold, or hurt. Short \
 sentences. No preamble."""
+
+# "I cut my foot" is not a topic. Searched as written it finds the encyclopaedia's
+# article on feet, and a model handed that will explain what a foot is to a
+# person who is bleeding. Measured 2026-09-17 on the real shelf: the statement
+# retrieved "Feet · Vikidia" at 0.47; the same need phrased as a topic retrieved
+# "Where There Is No Doctor · pp131-133" at 0.58. So what was said is turned into
+# what the index needs, by the same model, before anything is retrieved.
+REPHRASE = """Someone said this to a library that can only be searched by topic. \
+Write the one line the index needs: what has happened or what the thing is, then \
+the concrete things they need to do or know about it, as a book would head its \
+sections. Name the injury or condition in the general words a first-aid book \
+uses (a cut, a burn, a bite, a fever), and leave the body part out: a book \
+treats a cut the same on a hand or a foot, and naming the part finds pages \
+about the part instead. Name actions, never "get help" or "seek attention". \
+At most 20 words. No preamble, nothing after it. If it is already a clear \
+question about a topic, write it back unchanged.
+
+The shape, with other subjects:
+"my kid has a fever" -> "fever in a child: cooling, fluids, when it is dangerous"
+"I burned my hand on the stove" -> "burns: cooling, cleaning, covering, when it is serious"
+"the water looks bad" -> "unsafe water: how to tell, boiling, bleach, filtering" """
 
 
 def die(msg):
@@ -307,6 +332,27 @@ def pick_chat():
     die("No chat model is loaded. Load one, or set LASTLIGHT_CHAT.")
 
 
+def rephrase(question, model, base, key):
+    """What was said, turned into what the shelf should be searched for.
+
+    Returns "" when the model gives nothing usable or gives the question back,
+    and never raises: a rephrase that fails costs the raw search, not the answer.
+    """
+    body = {"model": model, "max_tokens": 60, "temperature": 0,
+            "chat_template_kwargs": {"enable_thinking": False},
+            "messages": [{"role": "system", "content": REPHRASE},
+                         {"role": "user", "content": question}]}
+    try:
+        d = api("/v1/chat/completions", body, timeout=60, base=base, key=key)
+        lines = (d["choices"][0]["message"].get("content") or "").strip().splitlines()
+    except Exception:  # noqa: BLE001
+        return ""
+    line = lines[0].strip(" \"'.") if lines else ""
+    if not line or len(line) > 200 or line.lower() == question.strip().lower():
+        return ""
+    return line
+
+
 def ask(question, show_sources=True, quiet=False):
     """Answer from the vault, or refuse.
 
@@ -351,7 +397,24 @@ def ask(question, show_sources=True, quiet=False):
             return {"answer": d["answer"], "refused": False, "cited": [],
                     "sources": d["sources"][:8], "via": f"{d['docs']} documents"}
 
+    # The model is needed before retrieval now, for the rephrase. If it cannot
+    # be had, the search runs on the words as said and the floor below decides,
+    # exactly as before; whatever pick_chat raises is raised again where the
+    # answer needs it, so the refusal path stays free of the device.
+    try:
+        model, base, key = pick_chat()
+    except BaseException:  # noqa: BLE001  (die() exits; the device may be down)
+        model = base = key = None
+    searched = rephrase(question, model, base, key) if model else ""
     hits = search(c, question)
+    if searched:
+        # Both searches, best similarity per passage. The raw words still count:
+        # a rephrase can only add what they missed, never hide what they found.
+        seen = {h["id"]: h for h in hits}
+        for h in search(c, searched):
+            if h["id"] not in seen or h["sim"] > seen[h["id"]]["sim"]:
+                seen[h["id"]] = h
+        hits = sorted(seen.values(), key=lambda h: -h["sim"])
     if not hits or hits[0]["sim"] < MIN_SIM:
         # Nothing retrieved is close enough to be about this. Refuse here, before
         # a model gets the chance to be helpful about it.
@@ -360,12 +423,14 @@ def ask(question, show_sources=True, quiet=False):
             if hits:
                 print(f"  (closest passage scored {hits[0]['sim']:.2f}, "
                       f"below the {MIN_SIM} floor)")
-        return {"answer": REFUSAL, "refused": True, "hits": hits[:3]}
+        return {"answer": REFUSAL, "refused": True, "hits": hits[:3],
+                "searched": searched}
 
     top = hits[:TOP_ANSWER]
     passages = "\n\n".join(
         f"[{i+1}] ({cite(h)})\n{h['text'][:1200]}" for i, h in enumerate(top))
-    model, base, key = pick_chat()
+    if model is None:
+        model, base, key = pick_chat()
     body = {"model": model, "max_tokens": 700, "temperature": 0.2,
             "chat_template_kwargs": {"enable_thinking": False},
             "messages": [
@@ -378,7 +443,13 @@ def ask(question, show_sources=True, quiet=False):
     def _guard(text):
         cited = {int(n) for n in re.findall(r"\[(\d+)\]", text)}
         valid = cited & set(range(1, len(top) + 1))
-        return cited, valid, text.startswith(REFUSAL[:20])
+        # A refusal at the end of a paragraph of "the archive says [3] that
+        # knots exist, but that is not relevant" is still a refusal. Seen on
+        # 2026-09-17 with "I cut my foot": six passages narrated and dismissed
+        # one by one, the refusal last, and the guard kept it because it began
+        # with a citation. Anything that ends in the refusal is the refusal.
+        t = text.strip()
+        return cited, valid, t.startswith(REFUSAL[:20]) or t.endswith(REFUSAL)
 
     d = api("/v1/chat/completions", body, timeout=420, base=base, key=key)
     answer = (d["choices"][0]["message"].get("content") or "").strip()
@@ -406,6 +477,10 @@ def ask(question, show_sources=True, quiet=False):
         answer = (REFUSAL + "\n  (an answer was produced but cited no passage, "
                   "so it was withheld)")
         refused = True
+    elif refused and answer != REFUSAL:
+        # Whatever was narrated on the way to the refusal is not an answer;
+        # the person gets the refusal, not a tour of passages that did not apply.
+        answer, cited, valid = REFUSAL, set(), set()
     bad = cited - set(range(1, len(top) + 1))
 
     if not quiet:
@@ -418,7 +493,8 @@ def ask(question, show_sources=True, quiet=False):
                 mark = "*" if i in valid else " "
                 print(f"   {mark}[{i}] {cite(h)}   sim {h['sim']:.2f}")
     return {"answer": answer, "refused": refused, "cited": sorted(valid),
-            "sources": [cite(h) for h in top], "model": model}
+            "sources": [cite(h) for h in top], "model": model,
+            "searched": searched}
 
 
 # ---------------------------------------------------------------- the test
@@ -583,18 +659,20 @@ def _selfcheck():
     Fails if a first answer with no [n] is not asked again, if the second
     answer is not kept, or if two misses do not end in the refusal.
     """
-    global api, search, pick_chat
+    global api, search, pick_chat, rephrase
     import tempfile
-    real_api, real_search, real_pick = api, search, pick_chat
+    real_api, real_search, real_pick, real_rephrase = api, search, pick_chat, rephrase
     real_home = os.environ.get("ARCHIVER_HOME")
     # A temp corpus and no device: this must pass on a machine with neither.
     os.environ["ARCHIVER_HOME"] = tempfile.mkdtemp(prefix="archivist-selfcheck-")
-    hits = [{"sim": 0.9, "text": "Keep the bitten limb still and below the heart.",
+    hits = [{"id": i, "sim": 0.9, "text": "Keep the bitten limb still and below the heart.",
              "title": "SAS Survival Handbook", "source": "shelf", "page_from": 439,
-             "page_to": 440, "doc_id": 1, "path": "x", "chunk_id": 1}] * 3
+             "page_to": 440, "doc_id": 1, "path": "x", "chunk_id": 1} for i in (1, 2, 3)]
     calls = []
+    searches = []
 
     def fake_search(c, q):
+        searches.append(q)
         return list(hits)
 
     def scripted(*answers):
@@ -607,6 +685,7 @@ def _selfcheck():
     try:
         search = fake_search
         pick_chat = lambda: ("fake-model", None, "k")  # noqa: E731
+        rephrase = lambda q, m, b, k: ""  # noqa: E731  (the raw words, as before)
         api = scripted("Keep the limb still and low.", "Keep the limb still and low [1].")
         r = ask("snake bite", quiet=True, show_sources=False)
         assert not r["refused"] and r["cited"] == [1], r
@@ -620,10 +699,25 @@ def _selfcheck():
         api = scripted("Keep it still [1].")
         r = ask("snake bite", quiet=True, show_sources=False)
         assert not r["refused"] and len(calls) == 1, (r, calls)
+        # A tour of passages that ends in the refusal is the refusal, bare.
+        calls.clear()
+        api = scripted("The archive says [1] a foot has bones, but that is not "
+                       "relevant. " + REFUSAL)
+        r = ask("I cut my foot", quiet=True, show_sources=False)
+        assert r["refused"] and r["answer"] == REFUSAL and r["cited"] == [], r
+        # The rephrase is searched too, and a passage found by either counts
+        # once, at its best similarity.
+        calls.clear(); searches.clear()
+        rephrase = lambda q, m, b, k: "cut on the foot, stop bleeding, clean, bandage"  # noqa: E731
+        api = scripted("Wash it, press on it, cover it [2].")
+        r = ask("I cut my foot", quiet=True, show_sources=False)
+        assert searches == ["I cut my foot", "cut on the foot, stop bleeding, clean, bandage"], searches
+        assert not r["refused"] and r["cited"] == [2] and len(r["sources"]) == 3, r
+        assert r["searched"].startswith("cut on the foot"), r
         print("  selfcheck ok: citation retry asks once, keeps a cited second answer, "
-              "refuses two misses")
+              "refuses two misses; a trailing refusal is bare; the rephrase is searched")
     finally:
-        api, search, pick_chat = real_api, real_search, real_pick
+        api, search, pick_chat, rephrase = real_api, real_search, real_pick, real_rephrase
         if real_home is None:
             os.environ.pop("ARCHIVER_HOME", None)
         else:

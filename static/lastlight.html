@@ -64,6 +64,9 @@ button{font:19px var(--sans);cursor:pointer}
 #q::placeholder{color:var(--quiet);opacity:1}
 .go{flex:none;min-height:64px;padding:0 34px;background:var(--amber);color:var(--ground);
   border:0;border-radius:6px;font:600 19px var(--sans)}
+/* aria-disabled tells a screen reader the button is spent; this is what stops a
+   pointer spending a second inference on the device while the first runs. */
+.go[aria-disabled="true"]{pointer-events:none}
 .hint{margin:22px 0 0;max-width:34em;font:19px var(--sans);color:var(--quiet)}
 
 #result{outline:none}
@@ -231,25 +234,36 @@ button.row:hover,button.row:active{background:var(--hover);border-top-color:var(
 // them: without the parameter every call is a same-origin fetch.
 var DEMO = new URLSearchParams(location.search).get("demo") || "";
 
+// A fixture prettier than the device is worse than no fixture: the shelves here
+// were in the order that made the nicest sentence and the answer was written in
+// tidy paragraphs, and both of those hid a defect from every screenshot taken
+// before the page met the real server. These two now hold what came back.
 var HEALTH = {
   corpus:{documents:6043, chunks:27746, vectors:27746, subjects:2500},
-  shelves:[{name:"zimgit survival shelf", documents:109, pages:12605},
-           {name:"Vikidia", documents:5934, pages:5934}],
+  // documents desc, which is the order /api/health returns them in.
+  shelves:[{name:"Vikidia", documents:5934, pages:5934},
+           {name:"zimgit survival shelf", documents:109, pages:12605}],
   device:{reachable:true, chat_model:"Qwen/Qwen3-8B"}
 };
+// Captured off the device, kept to the character: a numbered list with a single
+// newline between the steps and not one blank line in it.
 var ANSWER = {
-  q:"how do I stop severe bleeding", secs:12.4, refused:false, cited:[1,2,3],
-  answer:"Press hard on the wound with a clean cloth and keep pressing until the "
-    + "bleeding stops.[1] Do not lift the cloth to look. If blood soaks through, put "
-    + "a second cloth on top of the first.[2]\n\nRaise the limb above the heart if it "
-    + "is not broken, and keep pressing for a full ten minutes by the clock.[3] A "
-    + "tourniquet is a last resort on a limb you have already decided to lose.[7]",
-  sources:["SAS Survival Handbook · pp439-440",
-           "Where There Is No Doctor · p82",
-           "A Book for Midwives · pp220-221",
-           "War Surgery in Afghanistan and Iraq · pp96-97",
-           "Nuclear War Survival Skills · p188",
-           "Foxfire 2 · pp310-311"],
+  q:"how do I purify water", secs:9.99, refused:false, cited:[1,3,6],
+  answer:"1. Strain water through a paper towel or clean cloth to remove dirt and "
+    + "particles [1].  \n2. Boil the water for 3 to 5 minutes or add a water-purifying "
+    + "agent [1].  \n3. Use water-purifying tablets, 2% tincture of iodine, or liquid "
+    + "chlorine bleach with hypochlorite [1].  \n4. For cloudy water, let it settle for "
+    + "24 hours or use alum to flocculate particles and wait 12 hours [3].  \n5. Filter "
+    + "through charcoal or closely woven garments if no equipment is available [3].  \n"
+    + "6. Boil or use iodine/chlorine for water from vegetation or ground [6].  \n7. For "
+    + "stagnant or polluted water, boil it before drinking [3].  \n8. When using a "
+    + "still, ensure the trough is properly dug and water is filtered through soil [6].",
+  sources:["Protection in the Nuclear Age · p32",
+           "Safe Water School Training Manual · pp34-35",
+           "The Ten Bushcraft Books · pp82-83",
+           "Wilderness Medicine Course · pp151-152",
+           "Survival Manual · p59",
+           "Survival Manual · pp58-59"],
   model:"Qwen/Qwen3-8B"
 };
 var REFUSED = {
@@ -285,6 +299,12 @@ var SUBJECT = {name:"suture", docs:11, mentions:97, read:30,
     + "decision before it is a technique. Close a wound only when it is clean and "
     + "less than a day old; a dirty or older wound is packed open and watched."};
 
+// Each demo types the question its own fixture answers, so what is echoed on
+// screen is what is in the box.
+var DEMO_Q = {answer:ANSWER.q, refused:REFUSED.q,
+              waiting:"how do I stop severe bleeding",
+              unreachable:"how do I stop severe bleeding"};
+
 var ASK_STEPS = [{at:0, label:"Reading the shelf"},
                  {at:700, label:"Asking the Archivist"},
                  {at:20000, label:"Checking every citation"}];
@@ -292,6 +312,10 @@ var ASK_STEPS = [{at:0, label:"Reading the shelf"},
 // screen must not claim a check the device does not perform.
 var SUBJECT_STEPS = [{at:0, label:"Reading every passage that names it"},
                      {at:700, label:"Asking the Archivist"}];
+
+// More rows than this on one shelf and the filter is drawn. A shelf of eight is
+// read; a shelf of 109 is searched, and 5,934 is not read by anybody.
+var FILTER_AT = 25;
 
 var health = null;      // the last good /api/health, read by three screens
 var healthFails = 0;    // two in a row before the screen says the server is gone
@@ -377,16 +401,30 @@ function demo(url){
 
 /* ------------------------------------------------------------------ health */
 
+function isEncyclopaedia(s){ return /vikidia/i.test(s.name); }
+
 function shelfWords(s){
   if (/survival/i.test(s.name)) return num(s.documents) + " books on the survival shelf";
-  if (/vikidia/i.test(s.name)) return "an encyclopaedia";
+  if (isEncyclopaedia(s)) return "an encyclopaedia";
   return num(s.documents) + " books on the " + s.name + " shelf";
 }
 
 function shelfPlace(s){
   if (/survival/i.test(s.name)) return "the survival shelf";
-  if (/vikidia/i.test(s.name)) return "the encyclopaedia";
+  if (isEncyclopaedia(s)) return "the encyclopaedia";
   return "the " + s.name + " shelf";
+}
+
+// The shelves arrive documents desc, which puts 5,934 articles in front of 109
+// books and opens the one line that says how much shelf there is with an
+// indefinite article: "an encyclopaedia, and 109 books on the survival shelf."
+// The books are what somebody came for, so they lead and the encyclopaedia
+// trails. This orders the two sentences, never the browse cards, which are
+// right to show the biggest shelf first.
+function inSentenceOrder(list){
+  var books = [], trailing = [];
+  list.forEach(function(s){ (isEncyclopaedia(s) ? trailing : books).push(s); });
+  return books.concat(trailing);
 }
 
 function paintStatus(){
@@ -402,7 +440,7 @@ function paintStatus(){
     box.textContent = "The Tiiny is there and no answer model is loaded. Browsing still works.";
     return;
   }
-  var line = health.shelves.map(shelfWords).join(", and ") + ".";
+  var line = inSentenceOrder(health.shelves).map(shelfWords).join(", and ") + ".";
   // A chunk with no vector cannot be found, and the person is entitled to know
   // how much of the shelf a question actually reaches.
   if (health.corpus.vectors !== health.corpus.chunks){
@@ -501,7 +539,12 @@ function prose(text, cited){
   var box = el("div", "answer");
   String(text).split(/\n\s*\n/).forEach(function(para){
     var p = document.createElement("p");
-    p.innerHTML = marks(esc(para.replace(/\n/g, " ")), cited);
+    // A blank line starts a paragraph and a single newline stays a line break.
+    // The Archivist answers a procedure question as a numbered list with one
+    // newline between the steps and no blank line anywhere, so folding those
+    // into spaces ran eight steps into one block: thirty unbroken lines on a
+    // phone, and nobody finds step five in that with one hand.
+    p.innerHTML = marks(esc(para).replace(/[ \t]*\n/g, "<br>"), cited);
     box.appendChild(p);
   });
   return box;
@@ -596,7 +639,8 @@ function refusalPanel(r){
     + "in different words, or open one of these books."));
   if (health && health.shelves){
     box.appendChild(el("p", "said",
-      "It searched " + health.shelves.map(shelfPlace).join(" and ") + "."));
+      "It searched " + inSentenceOrder(health.shelves).map(shelfPlace).join(" and ")
+      + "."));
   }
   // The guard's own confession, in the guard's own words. It is the one place
   // the product explains its rule, so it is passed through rather than rewritten.
@@ -685,13 +729,22 @@ function settle(){
 // page stopped listening, and the question is still in the box.
 function stopAsk(){
   if (flight) flight.abort();
-  if (askWait){ askWait.cancel(); askWait = null; }
+  // settle(), not just a cancel. The line this prints promises the question is
+  // still in the box, and the abort takes the .catch down its early return, so
+  // without this the box stays readonly behind a button still reading Asking
+  // and the promise is a lie until somebody reloads the page.
+  settle();
   $("hint").hidden = false;
   place(el("p", "cost", "Stopped. The question is still in the box."));
 }
 
 function submitAsk(ev){
   ev.preventDefault();
+  // One question at a time. The Asking button is out of the pointer's reach, but
+  // Enter in the box is not, and a second submit puts a second five to forty
+  // second inference on a device somebody else may be using while leaving the
+  // first waiting block's timers firing at nodes nothing can see any more.
+  if (flight) return;
   var input = $("q");
   var text = input.value.trim();
   if (!text) return;
@@ -827,7 +880,8 @@ function showBooks(shelf){
       count.textContent = q
         ? num(rows.length) + " of " + num(d.books.length) + " books match"
         : num(d.books.length)
-          + (total === null ? "" : " of " + num(total)) + " books, by title.";
+          + (total === null || total === d.books.length ? "" : " of " + num(total))
+          + " books, by title.";
       list.textContent = "";
       rows.forEach(function(b){
         // Not a button. No API route returns a book's text, so a row that
@@ -840,9 +894,12 @@ function showBooks(shelf){
       });
     }
 
-    // A title-ordered list of 5,934 articles runs A to Ba and stops. Saying so,
-    // and offering the filter, is the difference between a browse view and a lie.
-    if (total !== null && d.books.length < total){
+    // The route hands over the whole shelf precisely so this can filter it, so
+    // the filter is offered on the length of the list and not on whether the
+    // server truncated. Gated on truncation it never appeared at all: 5,934
+    // Vikidia articles came back whole every time, and the filter the copy
+    // sheet promises was dead code on the only shelf that needs it.
+    if (d.books.length > FILTER_AT){
       filter = el("input", "filter");
       filter.type = "text";
       filter.placeholder = "filter by title";
@@ -989,11 +1046,10 @@ if (matchMedia("(pointer:fine)").matches) $("q").focus();
 loadHealth();
 
 if (DEMO === "answer" || DEMO === "refused" || DEMO === "waiting"){
-  $("q").value = DEMO === "refused" ? "how do I reset my Cloudflare API token"
-                                    : "how do I stop severe bleeding";
+  $("q").value = DEMO_Q[DEMO];
   setTimeout(function(){ $("askform").requestSubmit(); }, 140);
 } else if (DEMO === "unreachable"){
-  $("q").value = "how do I stop severe bleeding";
+  $("q").value = DEMO_Q[DEMO];
   setTimeout(function(){ $("askform").requestSubmit(); }, 220);
 } else if (DEMO === "browse"){
   setTimeout(openBrowse, 180);
@@ -1001,7 +1057,9 @@ if (DEMO === "answer" || DEMO === "refused" || DEMO === "waiting"){
   setTimeout(function(){
     openBrowse();
     setTimeout(function(){
-      if (DEMO === "books") showBooks(HEALTH.shelves[1]);
+      // By name, not by index into HEALTH.shelves: the fixture describes one
+      // shelf and an ordering change should not open a different one.
+      if (DEMO === "books") showBooks({name:BOOKS.shelf});
       else if (DEMO === "index") showIndex();
       else showSubject("suture");
     }, 140);

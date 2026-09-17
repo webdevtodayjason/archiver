@@ -107,7 +107,7 @@ python3 lastlight.py --selfcheck                          # offline, no device, 
 | `POST /api/ask` | exactly what `archivist.ask()` returned, plus the question and the seconds |
 | `GET /api/shelves` | every shelf with its document and page count |
 | `GET /api/books?shelf=` | the whole shelf in title order |
-| `GET /api/subjects?shelf=&limit=` | the subject index, strongest first |
+| `GET /api/subjects?shelf=&limit=&order=` | the subject index, by `documents` or by `aboutness` |
 | `GET /api/subject?name=` | what `entities.profile()` returned |
 
 **It serves 8700 and binds every interface.** The cockpit is a desk tool and binds

@@ -214,17 +214,24 @@ def books(c, shelf):
                           "ORDER BY title", (shelf,))]}
 
 
-def subjects(c, shelf="", limit=200):
-    """The subject index, strongest first, as a field manual's index reads.
+def subjects(c, shelf="", limit=200, order="documents"):
+    """The subject index, in one of the two orderings, named by the caller.
 
-    Ordered by what a subject is about rather than by how many documents carry
-    it. Document count alone returns water, ground, side, keep, leaves, which is
-    a list of common words; the same rows scored the way entities.subjects()
-    scored them when it chose them - occurrences per document, damped by how few
-    documents that is - return influenza, radiological, suture, antiviral,
-    quarantine, fallout. The score is not stored, so it is recomputed here from
-    the two columns that are. Ranking an index by document count is already
-    filed against the cockpit as its own defect and is not worth shipping twice.
+    `documents` is the default and is the plain document count the route was
+    specified to return. It reads like what it is: water, ground, side, keep,
+    leaves, a list of common words.
+
+    `aboutness` is what the index screen asks for by name, and it is the score
+    entities.subjects() used when it chose these rows - occurrences per document,
+    damped by how few documents that is - which returns influenza, radiological,
+    suture, antiviral, quarantine, fallout. The score is not stored, so it is
+    recomputed here from the two columns that are.
+
+    Anything else gets the default. The parameter exists because the page was
+    already sending order=aboutness while this function read no order at all and
+    sorted one way regardless: it agreed with the page by luck, and the next
+    person to implement the parameter would have silently reordered the index
+    without touching the screen that draws it.
 
     A shelf narrows which subjects are listed and nothing else. The counts stay
     corpus-wide on purpose: the mention table holds one row per chunk, so a
@@ -243,8 +250,11 @@ def subjects(c, shelf="", limit=200):
         args.append(shelf)
     rows = [{"name": r["name"], "documents": r["docs"], "mentions": r["mentions"]}
             for r in c.execute(sql, args) if r["docs"] > 0]
-    rows.sort(key=lambda r: -(r["mentions"] / r["documents"]
-                              * math.log(max(ndocs / r["documents"], 1.0000001))))
+    if order == "aboutness":
+        rows.sort(key=lambda r: -(r["mentions"] / r["documents"]
+                                  * math.log(max(ndocs / r["documents"], 1.0000001))))
+    else:
+        rows.sort(key=lambda r: (-r["documents"], r["name"]))
     return {"subjects": rows[:limit]}
 
 
@@ -341,7 +351,8 @@ class Handler(BaseHTTPRequestHandler):
                 limit = max(1, min(int(one("limit", "200")), 2500))
             except ValueError:
                 limit = 200
-            return self._json(subjects(archive.db(), one("shelf").strip(), limit))
+            return self._json(subjects(archive.db(), one("shelf").strip(), limit,
+                                       one("order", "documents")))
         if u.path == "/api/subject":
             name = one("name").strip()
             if not name:

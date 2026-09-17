@@ -153,6 +153,15 @@ class Page(Served):
     def test_the_page_can_reach_the_archivist(self):
         self.assertIn(b"/api/ask", call("GET", "/")[1])
 
+    def test_every_ordering_the_page_asks_for_is_one_the_route_has(self):
+        """The index asked for order=aboutness while the route read no order."""
+        asked = set(re.findall(rb"order=([a-z]+)", call("GET", "/")[1]))
+        self.assertLessEqual(asked, {b"aboutness", b"documents"}, asked)
+        for want in asked:
+            d = get_json("/api/subjects?limit=200&order=" + want.decode())[1]
+            self.assertEqual(sorted(d["subjects"][0]),
+                             ["documents", "mentions", "name"], want)
+
 
 # ----------------------------------------------------------------- the corpus
 class Health(Served):
@@ -230,6 +239,38 @@ class Subjects(Served):
 
     def test_a_limit_that_is_not_a_number_does_not_break_the_index(self):
         self.assertEqual(len(get_json("/api/subjects?limit=nine")[1]["subjects"]), 2)
+
+    def wide_subject(self):
+        """A subject in every book, so the two orderings cannot agree by luck.
+
+        boil and tourniquet are each one document with 24 occurrences, so they
+        score high on aboutness and low on document count; this one is the other
+        way round, and which end it comes out at is the whole assertion.
+        """
+        self.c.execute("INSERT INTO entity(name,kind,mentions,docs) "
+                       "VALUES('water','subject',3,3)")
+        self.c.commit()
+        self.addCleanup(self.c.commit)
+        self.addCleanup(self.c.execute, "DELETE FROM entity WHERE name='water'")
+
+    def test_order_defaults_to_document_count(self):
+        self.wide_subject()
+        d = get_json("/api/subjects?limit=200")[1]["subjects"]
+        self.assertEqual(d[0]["name"], "water", d)
+        self.assertEqual([s["documents"] for s in d], [3, 1, 1], d)
+
+    def test_order_aboutness_is_the_index_not_the_word_count(self):
+        """The page asks for this by name, and for a round nothing read it."""
+        self.wide_subject()
+        d = get_json("/api/subjects?limit=200&order=aboutness")[1]["subjects"]
+        self.assertEqual(d[-1]["name"], "water", d)
+        self.assertEqual({s["name"] for s in d}, {"boil", "tourniquet", "water"})
+
+    def test_an_ordering_nobody_implemented_gets_the_default(self):
+        self.wide_subject()
+        d = get_json("/api/subjects?limit=200&order=zzz")[1]["subjects"]
+        self.assertEqual([s["name"] for s in d],
+                         [s["name"] for s in get_json("/api/subjects")[1]["subjects"]])
 
     def test_a_shelf_narrows_the_index(self):
         d = get_json("/api/subjects?shelf=survival%20shelf")[1]

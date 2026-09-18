@@ -44,6 +44,23 @@ SHELF_BYTES = int(os.environ.get("LAST_LIGHT_SHELF_BYTES", "0") or 0)
 
 CHUNK = 1 << 20
 
+# A shelf built from Vikidia carries CC BY-SA 3.0 obligations: credit the authors
+# and state the licence with a link, and for a complete copy those are mandatory
+# rather than optional. So the bundle has to ship the notice, and this is where
+# that is enforced instead of remembered: unpack refuses a bundle without it.
+# The text below is what belongs in that file, for whoever builds the bundle.
+ATTRIBUTION = "ATTRIBUTION.txt"
+ATTRIBUTION_TEMPLATE = """This shelf contains text from Vikidia (https://en.vikidia.org),
+used under the Creative Commons Attribution-ShareAlike 3.0 Unported licence,
+https://creativecommons.org/licenses/by-sa/3.0/ , or the GNU Free Documentation
+License, https://www.gnu.org/copyleft/fdl.html .
+
+Authors are credited by the article history on Vikidia; each document records the
+article it came from. Text reused from this shelf stays under the same licence.
+
+Other documents on this shelf carry their own terms, listed in SOURCES.txt.
+"""
+
 
 def part_file():
     return archive.HOME / "shelf.tar.gz.part"
@@ -178,9 +195,20 @@ def _safe(members, root):
 
 
 def unpack(path):
-    """Extract the verified tarball into the corpus directory."""
+    """Extract the verified tarball into the corpus directory.
+
+    Refuses a bundle with no attribution file. A share-alike obligation that
+    depends on somebody remembering to add a file is an obligation that gets
+    missed, so it is checked here, where a missing file is still fixable.
+    """
     archive.HOME.mkdir(parents=True, exist_ok=True)
     with tarfile.open(path, "r:gz") as tf:
+        names = tf.getnames()
+        if not any(pathlib.PurePath(n).name == ATTRIBUTION for n in names):
+            raise RuntimeError(
+                "this shelf carries no %s. The Vikidia text in it is CC BY-SA, "
+                "which requires the authors to be credited and the licence "
+                "named, so the bundle is not complete without it." % ATTRIBUTION)
         tf.extractall(archive.HOME, members=_safe(tf, archive.HOME))
     return archive.HOME
 

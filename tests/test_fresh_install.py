@@ -111,40 +111,51 @@ class Schema(unittest.TestCase):
                 os.environ.update(keep)
 
 
-def ship_list():
-    """The release script's file list, loaded from the script by path.
+def ship_lists():
+    """The release script's file lists, loaded from the script by path.
 
-    The list has one home, scripts/build-release.py, and the hyphen in that name
-    keeps it out of reach of a plain import.
+    The lists have one home, scripts/build-release.py, and the hyphen in that
+    name keeps it out of reach of a plain import. There are two of them now, one
+    per farm app in this repo, and the subprocess rule applies to both.
     """
     import importlib.util
     path = ROOT / "scripts" / "build-release.py"
     spec = importlib.util.spec_from_file_location("build_release", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.SHIPPED
+    return module.APPS
 
 
 class Shipped(unittest.TestCase):
     """What goes in the tarball, and the one rule about what may be in it."""
 
     def test_nothing_shipped_can_start_another_program(self):
-        for name in ship_list():
-            source = ROOT / name
-            self.assertTrue(source.is_file(), f"{name} is on the ship list and not on disk")
-            if source.suffix != ".py":
-                continue
-            text = source.read_text(encoding="utf-8")
-            self.assertNotIn("import subprocess", text,
-                             f"{name} would fail the farm's archive scanner")
-            self.assertNotIn("os.system", text, name)
+        for app, names in ship_lists().items():
+            for name in names:
+                source = ROOT / name
+                self.assertTrue(source.is_file(),
+                                f"{name} is on {app}'s ship list and not on disk")
+                if source.suffix != ".py" and source.name != "last-light":
+                    continue
+                text = source.read_text(encoding="utf-8")
+                self.assertNotIn("import subprocess", text,
+                                 f"{name} would fail the farm's archive scanner")
+                self.assertNotIn("os.system", text, name)
 
-    def test_the_ship_list_carries_what_the_app_starts_with(self):
-        shipped = ship_list()
-        self.assertIn("cockpit.py", shipped)           # the entry point
-        self.assertIn("static/cockpit.html", shipped)  # the page it serves
-        for withheld in ("drivers.py", "pdfsource.py"):
-            self.assertNotIn(withheld, shipped)
+    def test_each_ship_list_carries_what_that_app_starts_with(self):
+        apps = ship_lists()
+        self.assertIn("cockpit.py", apps["tiiny-brain"])
+        self.assertIn("static/cockpit.html", apps["tiiny-brain"])
+        self.assertIn("last-light", apps["last-light"])
+        self.assertIn("static/lastlight.html", apps["last-light"])
+        self.assertIn("shelf.py", apps["last-light"])
+        # The books half asks and cites. Ingesting is what needs poppler, so the
+        # cockpit and the ingest path are not in it.
+        self.assertNotIn("ingest.py", apps["last-light"])
+        self.assertNotIn("cockpit.py", apps["last-light"])
+        for app, names in apps.items():
+            for withheld in ("drivers.py", "pdfsource.py"):
+                self.assertNotIn(withheld, names, f"{withheld} is in {app}")
 
 
 def free_port():

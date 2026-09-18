@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import pathlib
 import sys
+import gzip
 import tarfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -93,17 +94,27 @@ def build(version, out_dir=None, app="tiiny-brain"):
     def scrub(info):
         # Nobody's username belongs in a public tarball, and the farm reads
         # neither, so the same tree packs to the same bytes on any machine.
+        # The times go too: a file's mtime is when this checkout happened to
+        # be written, which is different on every machine and means nothing
+        # to anybody reading the tarball.
         info.uid = info.gid = 0
         info.uname = info.gname = ""
+        info.mtime = 0
         info.mode = 0o755 if info.mode & 0o111 else 0o644
         return info
 
-    with tarfile.open(out, "w:gz") as tar:
-        for name in shipped:
-            source = ROOT / name
-            if not source.is_file():
-                raise SystemExit(f"  missing from the tree: {name}")
-            tar.add(source, arcname=f"{stem}/{name}", filter=scrub)
+    # gzip stamps the time it ran into its own header, which would make every
+    # build of the same tree hash differently. An app that asks people to trust
+    # a sha256 should be buildable twice to the same sha256, so the stamp is
+    # pinned and the tarfile is handed the stream rather than the filename.
+    with open(out, "wb") as raw:
+        with gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as gz:
+            with tarfile.open(fileobj=gz, mode="w") as tar:
+                for name in shipped:
+                    source = ROOT / name
+                    if not source.is_file():
+                        raise SystemExit(f"  missing from the tree: {name}")
+                    tar.add(source, arcname=f"{stem}/{name}", filter=scrub)
 
     blob = out.read_bytes()
     return out, hashlib.sha256(blob).hexdigest(), len(blob)

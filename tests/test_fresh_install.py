@@ -142,6 +142,25 @@ class Shipped(unittest.TestCase):
                                  f"{name} would fail the farm's archive scanner")
                 self.assertNotIn("os.system", text, name)
 
+    def test_the_same_tree_packs_to_the_same_bytes_twice(self):
+        """The manifest pins a sha256, so a build has to be repeatable.
+
+        gzip stamps the time it ran and tar stamps each file's mtime, and
+        either one makes two builds of one tree hash differently. Then nobody
+        can check the published hash by rebuilding, which is the only check
+        that does not require trusting whoever uploaded it.
+        """
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "build_release", ROOT / "scripts" / "build-release.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:
+            first = module.build("9.9.9", one, "last-light")
+            second = module.build("9.9.9", two, "last-light")
+        self.assertEqual(first[1], second[1], "two builds of one tree differ")
+        self.assertEqual(first[2], second[2])
+
     def test_each_ship_list_carries_what_that_app_starts_with(self):
         apps = ship_lists()
         self.assertIn("cockpit.py", apps["tiiny-brain"])

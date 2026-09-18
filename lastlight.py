@@ -49,6 +49,10 @@ PAGE = HERE / "static" / "lastlight.html"
 
 # A question longer than this is not a question. The cap is here rather than in
 # archivist because the cost of finding out is a 420 second model call.
+NOTHING_ON_THE_SHELF = ("There is nothing on the shelf yet. Download it first, and then every answer comes with the book and the page it came from.")
+NO_SHELF_YET = ("The shelf has not been published yet, so there is nothing to download. This build asks and cites; it does not ingest PDFs, because that needs a program the farm will not run.")
+# One download at a time; two would append two streams into one part file.
+DOWNLOAD = threading.Semaphore(1)
 MAX_QUESTION = 500
 # What a browser polling /api/health costs the device: one GET every twenty
 # seconds at most, and three seconds before it gives up. The page asks on every
@@ -340,6 +344,13 @@ class Handler(BaseHTTPRequestHandler):
             c = archive.db()
             return self._json({"corpus": corpus(c), "shelves": shelves(c),
                                "device": device()})
+        # The farm build arrives with no corpus, so the page has to be able to
+        # ask whether there is one before it asks anything of it. Kept out of
+        # /api/health on purpose: health is about the corpus that exists, this
+        # is about whether one does.
+        if u.path == "/api/shelf":
+            import shelf
+            return self._json(shelf.state())
         if u.path == "/api/shelves":
             return self._json(shelves(archive.db()))
         if u.path == "/api/books":
@@ -381,12 +392,37 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(
                     {"error": f"Ask something shorter than {MAX_QUESTION} characters."},
                     400)
+            # An empty corpus is checked first of all. archivist.search() calls
+            # die() on one, which is sys.exit inside a request handler: the
+            # browser got a 500 quoting "run: archivist index", a command the
+            # farm build does not ship because it cannot ingest. Say the true
+            # thing instead, which is that the shelf is not here yet.
+            import shelf
+            if not shelf.installed():
+                return self._json({"error": NOTHING_ON_THE_SHELF}, 503)
             # Checked before the model rather than after, because the failure of
             # an unreachable box is a urllib timeout inside a 420 second call and
             # the person is left holding a spinner for the whole of it.
             if not device()["reachable"]:
                 return self._json({"error": UNREACHABLE}, 503)
             return self._json(ask(question))
+        if u.path == "/api/shelf/download":
+            import shelf
+            if shelf.installed():
+                return self._json(shelf.state())
+            if not shelf.configured():
+                return self._json({"error": NO_SHELF_YET}, 503)
+            # One at a time. A second press while the first is running would
+            # append two streams into the same part file.
+            if not DOWNLOAD.acquire(blocking=False):
+                return self._json({"error": "The shelf is already downloading."},
+                                  409)
+            try:
+                return self._json(shelf.install())
+            except RuntimeError as exc:
+                return self._json({"error": str(exc)}, 502)
+            finally:
+                DOWNLOAD.release()
         return self._json({"error": "not found"}, 404)
 
 

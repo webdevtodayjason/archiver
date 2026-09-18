@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""Build the release tarball the Tiiny App Farm installs.
+"""Build the release tarballs the Tiiny App Farm installs.
 
-    python3 scripts/build-release.py 0.1.3
+    python3 scripts/build-release.py 0.1.3                 tiiny-brain
+    python3 scripts/build-release.py 0.1.0 --app last-light
+
+One repo, two farm apps. tiiny-brain is the notes half and ships the cockpit;
+last-light is the books half and ships the library that answers out of them.
+They share archive.py and archivist.py and differ in everything else, which is
+why the file lists are written out per app rather than filtered by a rule.
 
 0.1.0 and 0.1.1 were packed by hand and the file list lived in somebody's shell
 history, which is not a thing a second person can repeat. It is written down
@@ -26,7 +32,7 @@ import tarfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 # Everything the app needs at runtime, and nothing that can run another program.
-SHIPPED = (
+BRAIN = (
     "LICENSE",
     "README.md",
     "archiver",
@@ -40,6 +46,23 @@ SHIPPED = (
     "overview.py",
     "static/cockpit.html",
 )
+
+# The books half. It asks and it cites, and it cannot ingest: pdfsource shells out
+# to poppler and the scanner refuses that, so the shelf arrives already built and
+# shelf.py is what fetches it.
+LAST_LIGHT = (
+    "LICENSE",
+    "README.md",
+    "last-light",
+    "archive.py",
+    "archivist.py",
+    "entities.py",
+    "lastlight.py",
+    "shelf.py",
+    "static/lastlight.html",
+)
+
+APPS = {"tiiny-brain": BRAIN, "last-light": LAST_LIGHT}
 
 # Deliberately absent, so a later reader knows it was a decision and not a slip.
 WITHHELD = {
@@ -55,11 +78,14 @@ WITHHELD = {
 }
 
 
-def build(version, out_dir=None):
-    """Write tiiny-brain-<version>.tar.gz and return (path, sha256, size)."""
+def build(version, out_dir=None, app="tiiny-brain"):
+    """Write <app>-<version>.tar.gz and return (path, sha256, size)."""
+    if app not in APPS:
+        raise SystemExit(f"  unknown app: {app}. Known: {', '.join(APPS)}")
+    shipped = APPS[app]
     out_dir = pathlib.Path(out_dir or ROOT / "dist")
     out_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"tiiny-brain-{version}"
+    stem = f"{app}-{version}"
     out = out_dir / f"{stem}.tar.gz"
     if out.exists():
         out.unlink()
@@ -73,7 +99,7 @@ def build(version, out_dir=None):
         return info
 
     with tarfile.open(out, "w:gz") as tar:
-        for name in SHIPPED:
+        for name in shipped:
             source = ROOT / name
             if not source.is_file():
                 raise SystemExit(f"  missing from the tree: {name}")
@@ -87,8 +113,10 @@ def main():
     parser = argparse.ArgumentParser(description="Build the farm release tarball.")
     parser.add_argument("version", help="for example 0.1.3")
     parser.add_argument("--out", default=None, help="where to write it")
+    parser.add_argument("--app", default="tiiny-brain", choices=sorted(APPS),
+                        help="which of the repo's two farm apps to pack")
     args = parser.parse_args()
-    out, digest, size = build(args.version, args.out)
+    out, digest, size = build(args.version, args.out, args.app)
     print(f"  {out}")
     print(f"  sha256  {digest}")
     print(f"  size    {size}")

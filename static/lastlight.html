@@ -406,6 +406,19 @@ button.row:hover .t{color:var(--amber)}
 
 <section id="view-browse" hidden></section>
 
+<!-- The farm build arrives empty. This is what a first run looks like before the
+     shelf is on the disk: it says so plainly, and it offers the one thing that
+     fixes it. It is never shown on a machine that already has a corpus. -->
+<section id="view-shelf" hidden>
+  <div class="col">
+    <p class="promise">The shelf is not on this device yet.
+      <b>LAST LIGHT answers out of real books, and there are no books here so far.</b></p>
+    <p id="shelf-detail" class="label"></p>
+    <p><button type="button" id="shelf-get" class="go">Download the shelf</button></p>
+    <p id="shelf-note" class="label"></p>
+  </div>
+</section>
+
 </main>
 </div>
 <script>
@@ -1309,7 +1322,63 @@ document.addEventListener("keydown", function(e){
 if (matchMedia("(pointer:fine)").matches) $("q").focus();
 
 makeRoom();
-loadHealth();
+
+// The shelf gate runs before anything asks the corpus a question, because on a
+// fresh farm install there is no corpus and every other screen would be reading
+// an empty one. On a machine that already has books this is one 200 and then it
+// gets out of the way.
+function paintShelf(st){
+  var detail = $("shelf-detail"), note = $("shelf-note"), get = $("shelf-get");
+  if (st.configured){
+    detail.textContent = st.bytes_expected
+      ? "About " + (st.bytes_expected / 1e6).toFixed(0) + " MB, once. After that it works with nothing connected."
+      : "It downloads once. After that it works with nothing connected.";
+    get.hidden = false;
+    note.textContent = st.bytes_have
+      ? "A part of it is already here and the download will carry on from there."
+      : "";
+  } else {
+    // Honest about the state it is actually in, rather than offering a button
+    // that cannot work.
+    detail.textContent = "No shelf has been published yet, so there is nothing to download.";
+    get.hidden = true;
+    note.textContent = "This build asks and cites. It does not build a shelf from PDFs, because that needs a program the farm will not run.";
+  }
+}
+
+function shelfGate(){
+  return call("/api/shelf").then(function(st){
+    if (st.installed) return true;
+    $("view-ask").hidden = true;
+    $("view-browse").hidden = true;
+    $("view-shelf").hidden = false;
+    paintShelf(st);
+    return false;
+  }).catch(function(){
+    // If the gate itself cannot be read, say nothing and let the normal screens
+    // run. A corpus that exists must never be hidden by a failed check.
+    return true;
+  });
+}
+
+$("shelf-get").addEventListener("click", function(){
+  var get = $("shelf-get"), note = $("shelf-note");
+  get.disabled = true;
+  get.textContent = "Downloading";
+  note.textContent = "This takes a while and the page can stay open.";
+  call("/api/shelf/download", {method:"POST", body:"{}"}).then(function(st){
+    if (st && st.installed){ location.reload(); return; }
+    note.textContent = (st && st.error) || "The download did not finish.";
+    get.disabled = false;
+    get.textContent = "Try again";
+  }).catch(function(e){
+    note.textContent = (e && e.message) || "The download did not finish.";
+    get.disabled = false;
+    get.textContent = "Try again";
+  });
+});
+
+shelfGate().then(function(ready){ if (ready) loadHealth(); });
 
 if (DEMO === "answer" || DEMO === "refused" || DEMO === "waiting"){
   $("q").value = DEMO_Q[DEMO];

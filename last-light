@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""LAST LIGHT in one command, which is the shape the Tiiny App Farm starts.
+
+The repo already serves this: `python3 lastlight.py` is what the launchd unit on
+Jason's Mac runs, and it keeps working exactly as it did. The farm starts an app
+by running one command and stops it by signalling one process, so this is that
+command, and it adds the two things a farm install needs that a desk install
+never did: a way to say the shelf is not here yet, and a way to go and get it.
+
+    last-light --serve                 the library on 8700
+    last-light --serve --port 7700     somewhere else
+    last-light --selfcheck             no device, no corpus, no network, exits 0
+    last-light --shelf                 what the shelf is and whether it is here
+    last-light --download-shelf        fetch it, verify it, unpack it
+
+The port comes from --port, then TIINYAPP_PORT (which the farm always sets), then
+PORT, then 8700.
+
+Ingestion is deliberately absent from the farm build. Turning a PDF into text
+needs poppler, reaching poppler means starting another program, and the farm's
+archive scanner refuses a tree that can do that. So this half asks and cites, and
+the shelf arrives already built. The desk tool in the same repo still ingests.
+"""
+import os
+import sys
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+LAST_LIGHT_VERSION = "0.1.0"
+
+USAGE = """last-light %s - the off-grid library that answers out of real books
+
+  last-light --serve [--port N]   serve the library
+  last-light --selfcheck          prove the install with no device and no corpus
+  last-light --shelf              print the shelf state as JSON
+  last-light --download-shelf     fetch the prebuilt shelf and verify it
+  last-light --version            print the version
+  last-light --help               this
+
+Environment: TIINY_HOST and TIINY_KEY name the device. ARCHIVER_HOME says where
+the corpus lives; on the farm it defaults to the app's own data directory, which
+survives an upgrade. With no corpus the library still serves and says the shelf
+is not downloaded yet. With no device it still lists the shelf and says which
+part is unavailable.
+""" % LAST_LIGHT_VERSION
+
+
+def fail(message):
+    sys.stderr.write("last-light: %s\n" % message)
+    return 2
+
+
+def port_from(argv):
+    """--port N, then TIINYAPP_PORT, then PORT, then 8700."""
+    if "--port" in argv:
+        i = argv.index("--port")
+        if i + 1 >= len(argv):
+            raise ValueError("--port needs a number")
+        return int(argv[i + 1])
+    for name in ("TIINYAPP_PORT", "PORT"):
+        value = os.environ.get(name)
+        if value:
+            return int(value)
+    return 8700
+
+
+def human(n):
+    return "%.1f MB" % (n / 1e6) if n else "0"
+
+
+def main(argv):
+    if "--help" in argv or "-h" in argv:
+        sys.stdout.write(USAGE)
+        return 0
+    if "--version" in argv:
+        print(LAST_LIGHT_VERSION)
+        return 0
+
+    if "--selfcheck" in argv:
+        import lastlight
+        return lastlight.selfcheck()
+
+    if "--shelf" in argv:
+        import json
+        import shelf
+        print(json.dumps(shelf.state(), indent=2))
+        return 0
+
+    if "--download-shelf" in argv:
+        import shelf
+        if shelf.installed():
+            print("The shelf is already here. Nothing to do.")
+            return 0
+        if not shelf.configured():
+            return fail("no shelf has been published yet, so there is nothing "
+                        "to fetch. See shelf.py.")
+        last = [0]
+
+        def progress(have, total):
+            step = have * 20 // max(total, 1)
+            if step != last[0]:
+                last[0] = step
+                sys.stdout.write("\r  %s of %s" % (human(have), human(total)))
+                sys.stdout.flush()
+        try:
+            state = shelf.install(progress)
+        except RuntimeError as exc:
+            sys.stdout.write("\n")
+            return fail(str(exc))
+        sys.stdout.write("\n  %d documents on the shelf\n" % state["documents"])
+        return 0
+
+    if "--serve" in argv or not argv:
+        try:
+            port = port_from(argv)
+        except ValueError as exc:
+            return fail(str(exc))
+        import lastlight
+        lastlight.run(port)
+        return 0
+
+    return fail("unknown option. Try --help.")
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        sys.exit(130)

@@ -4,6 +4,30 @@ Dates are when the work landed, not when it was tagged.
 
 ## Unreleased
 
+## LAST LIGHT 0.1.1 - 18 September 2026
+
+### The shelf it needed did not exist yet
+
+LAST LIGHT reached the farm as 0.1.0 with nowhere to get a corpus from. The farm
+build cannot ingest: turning a PDF into text needs poppler, reaching poppler
+means starting another program, and the farm's archive scanner refuses a tree
+that can do that. So the app was always going to download a shelf somebody else
+had built, and until one was published it did the only honest thing available,
+which was to say so and refuse.
+
+The shelf is published now, as its own release on this repo: 5,955 documents,
+5,934 Vikidia articles under CC BY-SA 3.0 and 21 survival and reference PDFs
+that are free to pass on. It was cut from a copy of the working corpus, with the
+88 documents whose terms could not be established in writing deleted along with
+their pages, chunks, vectors and entities, and the file vacuumed so it carries
+no trace of them. ATTRIBUTION.txt and SOURCES.txt travel inside it, and the app
+refuses to unpack a bundle that has no attribution file, because a share-alike
+obligation that depends on somebody remembering is one that gets missed.
+
+The shelf has its own tag, so the app can be released again without republishing
+73 MB of data, and all three of its constants read the environment first, which
+is how a mirror gets pointed at.
+
 ## 0.1.3
 
 ### There was no way to load notes without a terminal

@@ -28,7 +28,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-LAST_LIGHT_VERSION = "0.1.0"
+LAST_LIGHT_VERSION = "0.1.1"
 
 USAGE = """last-light %s - the off-grid library that answers out of real books
 

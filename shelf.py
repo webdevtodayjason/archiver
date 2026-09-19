@@ -32,15 +32,22 @@ import urllib.request
 import archive
 
 # ---------------------------------------------------------------- the shelf
-# PLACEHOLDER. The corpus is not published yet: Jason decides what goes in the
-# shelf from artifacts-src/lastlight-shelf-titles.md, and only then does it get
-# a bucket, a URL and a hash. Until all three are real, download() refuses and
-# says so rather than fetching something that is not there. Replace all three
-# together, and keep the version in the filename so an old one stays fetchable.
-SHELF_URL_PLACEHOLDER = "https://REPLACE-ME-WITH-R2-PUBLIC-URL.invalid/last-light/shelf-0.1.0.tar.gz"
-SHELF_URL = os.environ.get("LAST_LIGHT_SHELF_URL", SHELF_URL_PLACEHOLDER)
-SHELF_SHA256 = os.environ.get("LAST_LIGHT_SHELF_SHA256", "")
-SHELF_BYTES = int(os.environ.get("LAST_LIGHT_SHELF_BYTES", "0") or 0)
+# The published shelf: 5,955 documents, 5,934 of them Vikidia articles and 21 of
+# them survival and reference PDFs that are free to pass on. It is a release
+# asset rather than a repository file because it is 73 MB of data, and it has its
+# own tag so the app can be released without republishing the shelf.
+#
+# The three go together and are replaced together. Keep the version in the file
+# name, so an older app keeps fetching the shelf it was built against. All three
+# can be overridden from the environment, which is how a mirror is pointed at.
+SHELF_URL = os.environ.get(
+    "LAST_LIGHT_SHELF_URL",
+    "https://github.com/webdevtodayjason/archiver/releases/download"
+    "/shelf-v0.1.0/shelf-0.1.0.tar.gz")
+SHELF_SHA256 = os.environ.get(
+    "LAST_LIGHT_SHELF_SHA256",
+    "85dacb04a56693295ffe23e2251f746a7250a366a475469eb1ce4fda43181e5c")
+SHELF_BYTES = int(os.environ.get("LAST_LIGHT_SHELF_BYTES", "73196259") or 0)
 
 CHUNK = 1 << 20
 

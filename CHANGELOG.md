@@ -4,6 +4,15 @@ Dates are when the work landed, not when it was tagged.
 
 ## Unreleased
 
+## LAST LIGHT 0.1.2 - 29 September 2026
+
+### The farm now receives the LAST LIGHT archive
+
+The farm's attempted 0.1.3 update pointed LAST LIGHT at Tiiny Brain's 0.1.3
+archive. That archive correctly has no `last-light` entrypoint, so the offline
+selfcheck could not start. This release gives the already passing LAST LIGHT
+tree its own next tag and archive, keeping the two apps' release lines separate.
+
 ## LAST LIGHT 0.1.1 - 18 September 2026
 
 ### The shelf it needed did not exist yet

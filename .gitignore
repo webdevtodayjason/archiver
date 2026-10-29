@@ -11,3 +11,6 @@ __pycache__/
 # up as embedded repos and commits a gitlink that no clone can resolve.
 .claude/worktrees/
 dist/
+
+# Graft local cache (directory or symlink)
+/graft
